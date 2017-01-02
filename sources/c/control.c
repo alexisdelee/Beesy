@@ -1,7 +1,7 @@
 /*
 ** Filename: control.c
 **
-** Made by: Alexis Delee and Laureen Martina Cahill
+** Made by: Alexis Delée and Laureen Martina Cahill
 **
 ** Description: set of functions used in the management of the database
 */
@@ -98,44 +98,6 @@ int beesy_log()
     return strfree(1, 1, &frefsPath);
 }
 
-int beesy_confidential(const char *directory, const char *secret, short mode)
-{
-    DIR *folder = NULL;
-    struct dirent *readFile = NULL;
-    char *tmpPath = NULL, *newPath = NULL;
-
-    folder = opendir(directory);
-    if(folder == NULL) return -1;
-
-    while((readFile = readdir(folder)) != NULL){
-        if(!mode){
-            if(strstr(".", readFile->d_name) == NULL
-               && strstr("..", readFile->d_name) == NULL
-               && strpbrk("~$", readFile->d_name) != NULL){
-                strconcat(&tmpPath, 3, directory, "/", readFile->d_name);
-
-                newPath = NEW(char *, strlen(tmpPath) - 2);
-                if(newPath == NULL) break;
-                strcpy(newPath, readFile->d_name + 2);
-                strconcat(&newPath, 3, directory, "/", newPath);
-            }
-        } else {
-            if(strstr(".", readFile->d_name) == NULL
-               && strstr("..", readFile->d_name) == NULL
-               && strpbrk("~$", readFile->d_name) == NULL){
-                strconcat(&tmpPath, 3, directory, "/", readFile->d_name);
-                strconcat(&newPath, 3, directory, "/~$", readFile->d_name);
-            }
-        }
-
-        XOR(secret, tmpPath, newPath, mode);
-        if(!mode) remove(tmpPath);
-    }
-
-    if(closedir(folder) == -1) return strfree(-1, 2, &tmpPath, &newPath);
-    else return strfree(1, 2, &tmpPath, &newPath);
-}
-
 int beesy_connect_database(const char *database, const char *password)
 {
     char *databasePath = NULL;
@@ -151,7 +113,7 @@ int beesy_connect_database(const char *database, const char *password)
     }
 
     strcpy(currentDatabase, databasePath);
-    if(beesy_confidential(databasePath, password, DECRYPT) == -1) return strfree(-1, 1, &databasePath);
+    if(confidential(databasePath, password, DECRYPT) == -1) return strfree(-1, 1, &databasePath);
 
     _status = 1;
     return strfree(1, 1, &databasePath);
@@ -162,7 +124,7 @@ int beesy_close_database(const char *password)
     if(!_status) return -1;
 
     _status = 0;
-    return beesy_confidential(currentDatabase, password, ENCRYPT);
+    return confidential(currentDatabase, password, ENCRYPT);
 }
 
 int beesy_search_document(const char *collection, int mode, const char *criteria, void *value, Request *request)

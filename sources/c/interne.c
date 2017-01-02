@@ -1,19 +1,19 @@
 /*
 ** Filename: interne.c
 **
-** Made by: Alexis Delee and Laureen Martina Cahill
+** Made by: Alexis Delée and Laureen Martina Cahill
 **
 ** Description: set of functions used in internal application
 */
 
-#include <stdint.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include <limits.h>
 #include <errno.h>
+#include <direct.h>
+#include <dirent.h>
 
 #include "../../ext/SHA1/include/sha1.h"
 #include "../h/strlib.h"
@@ -25,7 +25,7 @@
 int hostLocation(const char *localisation, char *hostDir)
 {
     FILE *HOSTfile = NULL;
-    char content[257] = "";
+    char content[65] = "";
 
     if(strlen(hostDir) == 0){
         HOSTfile = fopen(localisation, "r");
@@ -52,9 +52,9 @@ int hostLocation(const char *localisation, char *hostDir)
     return -1;
 }
 
-int fsize(FILE *file)
+long fsize(FILE *file)
 {
-    int size = 0;
+    long size = 0;
 
     if(file != NULL){
       fseek(file, 0, SEEK_END);
@@ -90,35 +90,7 @@ int sha1(char *hash, const char *password)
     return 1;
 }
 
-int fsha1(char *hash, const char *path)
-{
-    FILE *file = NULL;
-    char *content = NULL, *salt = NULL;
-    long size;
-
-    file = fopen(path, "r");
-    if(file != NULL){
-        size = fsize(file);
-
-        content = NEW(char, ++size);
-        if(content == NULL) return -1;
-        salt = NEW(char, size + strlen(path));
-        if(salt == NULL) return -1;
-
-        fgets(content, size, file);
-        strcpy(salt, path); // using a salt to keep the uniqueness of the file
-        strcat(salt, content);
-        sha1(hash, salt);
-
-        fclose(file);
-    } else {
-        return -1;
-    }
-
-    return strfree(1, 2, &content, &salt);
-}
-
-int XOR(const char *password, const char *raw, const char *encrypted, int decrypt)
+int _xor(const char *password, const char *raw, const char *encrypted, short mode)
 {
     FILE *source = NULL;
     FILE *target = NULL;
@@ -129,7 +101,7 @@ int XOR(const char *password, const char *raw, const char *encrypted, int decryp
         target = fopen(encrypted, "wb");
         if(target != NULL){
             while((c = fgetc(source)) != EOF){
-                if(decrypt == 0){
+                if(mode == 0){
                     c ^= password[pos];
                     c = ~c;
                 } else {
@@ -154,6 +126,44 @@ int XOR(const char *password, const char *raw, const char *encrypted, int decryp
     }
 
     return 1;
+}
+
+int confidential(const char *directory, const char *secret, short mode)
+{
+    DIR *folder = NULL;
+    struct dirent *readFile = NULL;
+    char *tmpPath = NULL, *newPath = NULL;
+
+    folder = opendir(directory);
+    if(folder == NULL) return -1;
+
+    while((readFile = readdir(folder)) != NULL){
+        if(!mode){
+            if(strstr(".", readFile->d_name) == NULL
+               && strstr("..", readFile->d_name) == NULL
+               && strpbrk("~$", readFile->d_name) != NULL){
+                strconcat(&tmpPath, 3, directory, "/", readFile->d_name);
+
+                newPath = NEW(char *, strlen(tmpPath) - 2);
+                if(newPath == NULL) break;
+                strcpy(newPath, readFile->d_name + 2);
+                strconcat(&newPath, 3, directory, "/", newPath);
+            }
+        } else {
+            if(strstr(".", readFile->d_name) == NULL
+               && strstr("..", readFile->d_name) == NULL
+               && strpbrk("~$", readFile->d_name) == NULL){
+                strconcat(&tmpPath, 3, directory, "/", readFile->d_name);
+                strconcat(&newPath, 3, directory, "/~$", readFile->d_name);
+            }
+        }
+
+        _xor(secret, tmpPath, newPath, mode);
+        if(!mode) remove(tmpPath);
+    }
+
+    if(closedir(folder) == -1) return strfree(-1, 2, &tmpPath, &newPath);
+    else return strfree(1, 2, &tmpPath, &newPath);
 }
 
 char *extend(int size, const char *content)
@@ -286,6 +296,8 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
                             currentMaxSize = strlen(result->_match);
                             for(j = 0; j < cursor - 1; j++){
                                 result->_string[j] = realloc(result->_string[j], sizeof(char) * (currentMaxSize + 1));
+                                /* result->_string[j] = extend(currentMaxSize + 1, result->_string[j]);
+                                if(result->_string[j] == NULL) return strfree(-1, 1, &json_string); */
                             }
                         }
                         result->_string[cursor] = NEW(char, currentMaxSize + 1);
