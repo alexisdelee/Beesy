@@ -152,15 +152,15 @@ int beesy_search_document(const char *collection, int mode, const char *criteria
             if(request->document == NULL) return strfree(-1, 1, &collectionPath);
 
             for(index = 0; index < result._size; index++){
-                if((mode & DIFFERENT && result._integer[index] != *(long int *)value)
-                   || (mode & EQUAL && result._integer[index] == *(long int *)value)){
+                if((mode & DIFFERENT && result._integer[index] != *(long *)value)
+                   || (mode & EQUAL && result._integer[index] == *(long *)value)){
                     request->document[request->length] = extend(strlen(result._matches[index]), result._matches[index]);
                     if(request->document[request->length] == NULL) return strfree(-1, 1, &collectionPath);
                     request->length++;
                 }
 
-                if((mode & LOWER && !(mode & DIFFERENT) && result._integer[index] < *(long int *)value)
-                   ||(mode & UPPER && !(mode & DIFFERENT) && result._integer[index] > *(long int *)value)){
+                if((mode & LOWER && !(mode & DIFFERENT) && result._integer[index] < *(long *)value)
+                   ||(mode & UPPER && !(mode & DIFFERENT) && result._integer[index] > *(long *)value)){
                     request->document[request->length] = extend(strlen(result._matches[index]), result._matches[index]);
                     if(request->document[request->length] == NULL) return strfree(-1, 1, &collectionPath);
                     request->length++;

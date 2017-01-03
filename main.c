@@ -6,7 +6,7 @@
 int main(int argc, char **argv)
 {
     Request request;
-    int index, value = 20;
+    int index, value = 19;
 
     if(beesy_connect_database("esgi", "P2wV7UUQ") == 1){
         if(beesy_search_document("initial", INTEGER|EQUAL|UPPER|SORT, "age", &value, &request) != 1){
@@ -20,7 +20,7 @@ int main(int argc, char **argv)
             if(request.document != NULL) free(request.document);
         }
 
-        // beesy_drop_document("initial", INTEGER|EQUAL, "age", &value);
+        // beesy_drop_document("initial", INTEGER|UPPER, "age", &value);
         beesy_close_database("P2wV7UUQ");
     } else {
         printf("Connexion problem\n");

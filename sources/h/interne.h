@@ -17,7 +17,7 @@ typedef struct {
     char *_match;
     char **_matches;
     int _size;
-    long int *_integer;
+    long *_integer;
     double *_real;
     char **_string;
 } Result;
@@ -77,6 +77,8 @@ int confidential(const char *, const char *, short);
 ** <strA> content of the string
 */
 char *extend(int, const char *);
+
+int _swap(int, void *, void *);
 
 /*
 ** Description: parse string in JSON format

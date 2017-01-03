@@ -24,13 +24,13 @@
 
 int hostLocation(const char *localisation, char *hostDir)
 {
-    FILE *HOSTfile = NULL;
+    FILE *fhost = NULL;
     char content[65] = "";
 
     if(strlen(hostDir) == 0){
-        HOSTfile = fopen(localisation, "r");
-        if(HOSTfile != NULL){
-            if(fgets(content, sizeof content / sizeof *content, HOSTfile) != NULL){
+        fhost = fopen(localisation, "r");
+        if(fhost != NULL){
+            if(fgets(content, sizeof content / sizeof *content, fhost) != NULL){
                 if(content[strlen(content) - 1] == '\n'){
                     content[strlen(content) - 1] = '\0';
                 }
@@ -38,11 +38,11 @@ int hostLocation(const char *localisation, char *hostDir)
                 strcpy(hostDir, content);
                 if(content[strlen(content) - 1] != '/') strcat(hostDir, "/");
 
-                fclose(HOSTfile);
+                fclose(fhost);
                 return 1;
             }
 
-            fclose(HOSTfile);
+            fclose(fhost);
         }
     } else {
         return 1;
@@ -179,6 +179,38 @@ char *extend(int size, const char *content)
     return temporaire;
 }
 
+int _swap(int mode, void *first, void *second)
+{
+    char *copyString = NULL;
+    double copyDouble;
+    long copyInteger;
+
+    if(mode & 0x001){
+        copyInteger = *(long *)first;
+        *(long *)first = *(long *)second;
+        *(long *)second = copyInteger;
+    } else if(mode & 0x002){
+        copyDouble = *(double *)first;
+        *(double *)first = *(double *)second;
+        *(double *)second = copyDouble;
+    } else if(mode & 0x004){
+        copyString = extend(strlen(*(char **)first), *(char **)first);
+        if(copyString == NULL) return -1;
+
+        if(*(char **)first != NULL) free(*(char **)first);
+        *(char **)first = extend(strlen(*(char **)second), *(char **)second);
+        if(*(char **)first == NULL) return -1;
+
+        if(*(char **)second != NULL) free((char **)second);
+        *(char **)second = extend(strlen(copyString), copyString);
+        if(*(char **)second == NULL) return -1;
+
+        if(copyString != NULL) free(copyString);
+    }
+
+    return 1;
+}
+
 int jsoneq(const char *json, jsmntok_t *tok, const char *s)
 {
     if(tok->type == JSMN_STRING && (int)strlen(s) == tok->end - tok->start && strncmp(json + tok->start, s, tok->end - tok->start) == 0){
@@ -198,8 +230,6 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
     json_string = NEW(char *, MAXSIZE);
     if(json_string == NULL) return -1;
     while(fgets(json_string, MAXSIZE, fcollection) != NULL){
-        if(strlen(json_string) == 1) continue;
-
         jsmn_init(&p);
         r = jsmn_parse(&p, json_string, strlen(json_string), t, sizeof(t) / sizeof(t[0]));
         if(r < 0){
@@ -222,9 +252,9 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
                 if(!cursor){
                     result->_matches = NEW(char *, 1);
                     if(result->_matches == NULL) return strfree(-1, 1, &json_string);
-                    result->_matches[cursor] = NEW(char, length);
+
+                    result->_matches[cursor] = extend(length, temporaire);
                     if(result->_matches[cursor] == NULL) return strfree(-1, 1, &json_string);
-                    strcpy(result->_matches[cursor], temporaire);
 
                     currentMaxSizeMatches = length;
                 } else {
@@ -237,9 +267,9 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
                             result->_matches[j] = realloc(result->_matches[j], sizeof(char) * (currentMaxSizeMatches + 1));
                         }
                     }
-                    result->_matches[cursor] = NEW(char, currentMaxSizeMatches + 1);
-                    if(result->_matches[cursor] == NULL) return strfree(-1, 1, &json_string);
-                    strcpy(result->_matches[cursor], temporaire);
+
+                    result->_matches[cursor] = extend(currentMaxSizeMatches, temporaire);
+                    if(result->_matches[cursor]);
                 }
 
                 if(result->_match != NULL) free(result->_match);
@@ -249,11 +279,11 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
 
                 if(mode & 0x001){
                     if(!cursor){
-                        result->_integer = NEW(long int, 1);
+                        result->_integer = NEW(long, 1);
                         if(result->_integer == NULL) return strfree(-1, 1, &json_string);
                         result->_integer[cursor] = strtol(result->_match, &endptr, 10);
                     } else {
-                        result->_integer = realloc(result->_integer, sizeof(long int) * (cursor + 1));
+                        result->_integer = realloc(result->_integer, sizeof(long) * (cursor + 1));
                         if(result->_integer == NULL) return strfree(-1, 1, &json_string);
                         result->_integer[cursor] = strtol(result->_match, &endptr, 10);
                     }
@@ -283,9 +313,9 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
                     if(!cursor){
                         result->_string = NEW(char *, 1);
                         if(result->_string == NULL) return strfree(-1, 1, &json_string);
-                        result->_string[cursor] = NEW(char, strlen(result->_match));
+
+                        result->_string[cursor] = extend(strlen(result->_match) - 1, result->_match);
                         if(result->_string[cursor] == NULL) return strfree(-1, 1, &json_string);
-                        strcpy(result->_string[cursor], result->_match);
 
                         currentMaxSize = strlen(result->_match);
                     } else {
@@ -295,14 +325,13 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
                         if(strlen(result->_match) > currentMaxSize){
                             currentMaxSize = strlen(result->_match);
                             for(j = 0; j < cursor - 1; j++){
-                                result->_string[j] = realloc(result->_string[j], sizeof(char) * (currentMaxSize + 1));
-                                /* result->_string[j] = extend(currentMaxSize + 1, result->_string[j]);
-                                if(result->_string[j] == NULL) return strfree(-1, 1, &json_string); */
+                                result->_string[j] = extend(currentMaxSize + 1, result->_string[j]);
+                                if(result->_string[j] == NULL) return strfree(-1, 1, &json_string);
                             }
                         }
-                        result->_string[cursor] = NEW(char, currentMaxSize + 1);
+
+                        result->_string[cursor] = extend(currentMaxSize, result->_match);
                         if(result->_string[cursor] == NULL) return strfree(-1, 1, &json_string);
-                        strcpy(result->_string[cursor], result->_match);
                     }
                 }
 
@@ -313,6 +342,7 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
 
         if(temporaire != NULL) free(temporaire);
         if(json_string != NULL) free(json_string);
+
         json_string = NEW(char *, MAXSIZE);
         if(json_string == NULL) return -1;
     }
@@ -325,17 +355,16 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
 void quickSort(void *_array, int first, int last, int mode, char **matches)
 {
     int left = first - 1, right = last + 1;
-    long int pivotInteger = ((long int *)_array)[first], tmpInteger;
-    double pivotDouble = ((double *)_array)[first], tmpDouble;
-    char pivotString, *tmpString = NULL;
-    char *copy = NULL;
+    long pivotInteger = ((long *)_array)[first];
+    double pivotDouble = ((double *)_array)[first];
+    char pivotString;
 
     if(first >= last) return;
 
     while(1){
         if(mode & 0x001){
-            do right--; while(((long int *)_array)[right] > pivotInteger);
-            do left++; while(((long int *)_array)[left] < pivotInteger);
+            do right--; while(((long *)_array)[right] > pivotInteger);
+            do left++; while(((long *)_array)[left] < pivotInteger);
         } else if(mode & 0x002){
             do right--; while(((double *)_array)[right] > pivotDouble);
             do left++; while(((double *)_array)[left] < pivotDouble);
@@ -348,28 +377,14 @@ void quickSort(void *_array, int first, int last, int mode, char **matches)
 
         if(left < right){
             if(mode & 0x001){
-                tmpInteger = ((long int *)_array)[left];
-                ((long int *)_array)[left] = ((long int *)_array)[right];
-                ((long int *)_array)[right] = tmpInteger;
+                if(_swap(mode, &((long *)_array)[left], &((long *)_array)[right]) == -1) return;
             } else if(mode & 0x002){
-                tmpDouble = ((double *)_array)[left];
-                ((double *)_array)[left] = ((double *)_array)[right];
-                ((double *)_array)[right] = tmpDouble;
+                if(_swap(mode, &((double *)_array)[left], &((double *)_array)[right]) == -1) return;
             } else if(mode & 0x004){
-                tmpString = realloc(((char **)_array)[left], strlen(((char **)_array)[left]) + 1);
-                if(tmpString == NULL) return;
-                ((char **)_array)[left] = realloc(((char **)_array)[right], strlen(((char **)_array)[right]) + 1);
-                if(((char **)_array)[left] == NULL) return;
-                ((char **)_array)[right] = realloc(tmpString, strlen(tmpString) + 1);
-                if(((char **)_array)[right] == NULL) return;
+                if(_swap(mode, &((char **)_array)[left], &((char **)_array)[right]) == -1) return;
             }
 
-            copy = realloc(matches[left], strlen(matches[left]) + 1);
-            if(copy == NULL) return;
-            matches[left] = realloc(matches[right], strlen(matches[right]) + 1);
-            if(matches[left] == NULL) return;
-            matches[right] = realloc(copy, strlen(copy) + 1);
-            if(matches[right] == NULL) return;
+            if(_swap(0x004, &matches[left], &matches[right]) == -1) return;
         } else {
             break;
         }
