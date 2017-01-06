@@ -16,7 +16,7 @@
 ** <str> original string
 ** <string> string to transfer
 */
-void str(char **, const char *);
+int str(char **, const char *);
 
 /*
 ** Description: dynamically string concatenation to a character pointer
@@ -26,7 +26,7 @@ void str(char **, const char *);
 ** <indexA> number of arguments after this parameter
 ** <...> string to concatenate
 */
-void strconcat(char **, int, ...);
+int strconcat(char **, int, ...);
 
 /*
 ** Description: dynamically free character pointers
@@ -37,5 +37,9 @@ void strconcat(char **, int, ...);
 ** <...> string to free
 */
 int strfree(int, int, ...);
+
+char *strtrim(char *);
+
+int strsplit(char *, const char *, int *, char ***);
 
 #endif // STRLIB_H_INCLUDED

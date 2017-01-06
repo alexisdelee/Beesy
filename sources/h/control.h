@@ -9,79 +9,123 @@
 #ifndef CONTROL_H_INCLUDED
 #define CONTROL_H_INCLUDED
 
-#define INTEGER 0x001
-#define REAL 0x002
-#define STRING 0x004
-#define ARRAY 0x008
+#define WAIT        0x001
+#define ADVANCED    0x002
+#define ROOT        0x004
 
-#define EQUAL 0x010
-#define DIFFERENT 0x020
-#define LOWER 0x040
-#define UPPER 0x080
-#define INCLUDE 0x100
-#define SORT 0x200
+#define INTEGER     0x001
+#define REAL        0x002
+#define STRING      0x004
+#define ARRAY       0x008
+
+#define EQUAL       0x010
+#define DIFFERENT   0x020
+#define LOWER       0x040
+#define UPPER       0x080
+#define INCLUDE     0x100
+#define SORT        0x200
+
+typedef struct {
+    char baseDir[65];
+    char currentDatabase[65];
+    int initializationCommit;
+    int permission;
+    int log;
+    long sizeLine;
+} Settings;
 
 typedef struct {
     int length;
     char **document;
 } Request;
 
+typedef struct {
+    int argc;
+    char **argv;
+} Terminal;
+
+/*
+** Description: parse the file beesy.inc and passes the result in the structure of type Settings
+**
+** Syntax; beesy_settings(structA)
+** <structA> configuration options
+*/
+int beesy_settings(Settings *);
+
 /*
 ** Description: commit
+**
+** beesy_commit(structA)
+** <structA> configuration options
 */
-int beesy_commit();
+int beesy_commit(Settings *);
 
 /*
 ** Description: allows you to return to an old version of the database
 **
-** Syntax: beesy_rollback(strA)
+** Syntax: beesy_rollback(structA, strA)
+** <structA> configuration options
 ** <strA> string storing the hash
 */
-int beesy_rollback(const char *);
+int beesy_rollback(Settings, const char *);
 
 /*
 ** Description: display commits history
+**
+** Syntax: beesy_log(structA)
+** <structA> configuration options
 */
-int beesy_log();
+int beesy_log(Settings);
 
 /*
 ** Description: connexion to the database (creation if none exists)
 **
-** Syntax: beesy_connect_database(strA, strB)
+** Syntax: beesy_connect_database(structA, strA, strB)
+** <structA> configuration options
 ** <strA> link to the file
 ** <strB> string storing the password
 */
-int beesy_connect_database(const char *, const char *);
+int beesy_connect_database(Settings *, const char *, const char *);
 
 /*
 ** Description: take care of the correct closing to the database
 **
-** Syntax: beesy_close_database(strA)
+** Syntax: beesy_close_database(structA, strA)
+** <structA> configuration options
 ** <strA> string storing the password
 */
-int beesy_close_database(const char *);
+int beesy_close_database(Settings *, const char *);
 
 /*
 ** Description: search for documents in a collection
 **
-** Syntax: beesy_search_document(strA, intA, strB, void, structA)
+** Syntax: beesy_search_document(structA, strA, intA, strB, void, structB)
+** <structA> configuration options
 ** <strA> name of the collection
 ** <intA> type of data to process
 ** <strB> search criterion
 ** <void> data
-** <structA> structure of type Request containing the results
+** <structB> structure of type Request containing the results
 */
-int beesy_search_document(const char *, int, const char *, void *, Request *);
+int beesy_search_document(Settings, const char *, int, const char *, void *, Request *);
 
 /*
 ** Description: deleting documents in a collection
 **
-** Syntax: beesy_search_document(strA, intA, strB, void)
+** Syntax: beesy_search_document(structA, strA, intA, strB, void)
+** <structA> configuration options
 ** <strA> name of the collection
 ** <intA> type of data to process
 ** <strB> search criterion
 ** <void> data
 */
-int beesy_drop_document(const char *, int, const char *, void *);
+int beesy_drop_document(Settings, const char *, int, const char *, void *);
+
+int beesy_drop_collection(Settings, const char *);
+void beesy_error(int, int);
+int beesy_argv(char *, Terminal *);
+int beesy_analyze(Settings *, Terminal, char **);
+int beesy_detect(Settings *, Terminal, char (*)[2][100], char **);
+int beesy_run(Settings *, Terminal, int, char **);
 
 #endif // CONTROL_H_INCLUDED

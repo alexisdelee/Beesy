@@ -11,8 +11,6 @@
 
 #include "../../ext/jsmn/include/jsmn.h"
 
-#define MAXSIZE 1000
-
 typedef struct {
     char *_match;
     char **_matches;
@@ -23,21 +21,16 @@ typedef struct {
 } Result;
 
 /*
-** Description: modify the variable "hostDir" from the folder name stored in the configuration file
-**
-** Syntax: hostLocation(strA, strB)
-** <strA> path to the configuration file
-** <strB> string storing the folder to the databases
-*/
-int hostLocation(const char *, char *);
-
-/*
 ** Description: return the size of a file
 **
 ** Syntax: fsize(source)
 ** <source> link to file
 */
 long fsize(FILE *);
+
+int prohibitedCharacters(const char *);
+
+int check(int, ...);
 
 /*
 ** Description: get a hash of a string from the hash algorithm sha1
@@ -88,13 +81,14 @@ int jsoneq(const char *, jsmntok_t *tok, const char *);
 /*
 ** Description: management of the reading of a JSON file
 **
-** Syntax: readJson(source, strA, intA, structA)
+** Syntax: readJson(long, source, strA, intB, structA)
+** <intA> max size by line to read
 ** <source> link to the collection file
 ** <strA> search criterion
-** <intA> type of data to process
+** <intB> type of data to process
 ** <structA> structure of type Result containing the results
 */
-int readJson(FILE *, const char *, int, Result *);
+int readJson(long, FILE *, const char *, int, Result *);
 
 /*
 ** Description: multiple quick sort function

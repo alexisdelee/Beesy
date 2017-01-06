@@ -22,36 +22,6 @@
 #define NEW(type, size) malloc(sizeof(type) * (size))
 #define ERR_DEBUG(err) __FILE__, __LINE__ + err
 
-int hostLocation(const char *localisation, char *hostDir)
-{
-    FILE *fhost = NULL;
-    char content[65] = "";
-
-    if(strlen(hostDir) == 0){
-        fhost = fopen(localisation, "r");
-        if(fhost != NULL){
-            if(fgets(content, sizeof content / sizeof *content, fhost) != NULL){
-                if(content[strlen(content) - 1] == '\n'){
-                    content[strlen(content) - 1] = '\0';
-                }
-
-                strcpy(hostDir, content);
-                if(content[strlen(content) - 1] != '/') strcat(hostDir, "/");
-
-                fclose(fhost);
-                return 1;
-            }
-
-            fclose(fhost);
-        }
-    } else {
-        return 1;
-    }
-
-    printf("[TypeError] problem with the host file\n%s:%d\n\n", ERR_DEBUG(1));
-    return -1;
-}
-
 long fsize(FILE *file)
 {
     long size = 0;
@@ -63,6 +33,38 @@ long fsize(FILE *file)
     }
 
     return size;
+}
+
+int prohibitedCharacters(const char *string)
+{
+    if(strchr(string, '_') != NULL) return -1;
+    if(strstr(string, "~$") != NULL) return -1;
+
+    return 1;
+}
+
+int check(int limiter, ...)
+{
+    char **path;
+    va_list args;
+    int counter = 0;
+    int error = 0;
+
+    va_start(args, limiter);
+    for( ; counter < limiter; counter++){
+        path = va_arg(args, char **);
+
+        if(strlen(*path) > 64
+           || prohibitedCharacters(*path) == -1){
+            error = 1;
+            break;
+        }
+    }
+
+    va_end(args);
+
+    if(error) return EINVAL;
+    else return 0;
 }
 
 int sha1(char *hash, const char *password)
@@ -119,51 +121,73 @@ int _xor(const char *password, const char *raw, const char *encrypted, short mod
             fclose(target);
         } else {
             fclose(source);
-            return -1;
+            return EINTR;
         }
     } else {
-        return -1;
+        return EINTR;
     }
 
-    return 1;
+    return 0;
 }
 
 int confidential(const char *directory, const char *secret, short mode)
 {
     DIR *folder = NULL;
     struct dirent *readFile = NULL;
-    char *tmpPath = NULL, *newPath = NULL;
+    char *tmpPath = NULL;
+    char *newPath = NULL;
+    int status;
 
     folder = opendir(directory);
-    if(folder == NULL) return -1;
+    if(folder == NULL) return ENOENT;
 
     while((readFile = readdir(folder)) != NULL){
         if(!mode){
             if(strstr(".", readFile->d_name) == NULL
                && strstr("..", readFile->d_name) == NULL
                && strpbrk("~$", readFile->d_name) != NULL){
-                strconcat(&tmpPath, 3, directory, "/", readFile->d_name);
+                status = strconcat(&tmpPath, 3, directory, "/", readFile->d_name);
+                if(status)
+                    return status;
 
-                newPath = NEW(char *, strlen(tmpPath) - 2);
-                if(newPath == NULL) break;
-                strcpy(newPath, readFile->d_name + 2);
-                strconcat(&newPath, 3, directory, "/", newPath);
+                /* newPath = NEW(char *, strlen(tmpPath) - 2);
+                if(newPath == NULL) return ENOMEM;
+                strcpy(newPath, readFile->d_name + 2); */
+
+                newPath = extend(strlen(tmpPath) - 3, readFile->d_name + 2);
+                if(newPath == NULL) return ENOMEM;
+
+                status = strconcat(&newPath, 3, directory, "/", newPath);
+                if(status)
+                    return strfree(status, 1, &tmpPath);
+            } else {
+                continue;
             }
         } else {
             if(strstr(".", readFile->d_name) == NULL
                && strstr("..", readFile->d_name) == NULL
                && strpbrk("~$", readFile->d_name) == NULL){
-                strconcat(&tmpPath, 3, directory, "/", readFile->d_name);
-                strconcat(&newPath, 3, directory, "/~$", readFile->d_name);
+                status = strconcat(&tmpPath, 3, directory, "/", readFile->d_name);
+                if(status)
+                    return status;
+
+                status = strconcat(&newPath, 3, directory, "/~$", readFile->d_name);
+                if(status)
+                    return strfree(status, 1, &tmpPath);
+            } else {
+                continue;
             }
         }
 
-        _xor(secret, tmpPath, newPath, mode);
+        status = _xor(secret, tmpPath, newPath, mode);
+        if(status)
+            return strfree(status, 2, &tmpPath, &newPath);
+
         if(!mode) remove(tmpPath);
     }
 
-    if(closedir(folder) == -1) return strfree(-1, 2, &tmpPath, &newPath);
-    else return strfree(1, 2, &tmpPath, &newPath);
+    if(closedir(folder) == -1) return strfree(ENOENT, 2, &tmpPath, &newPath);
+    else return strfree(0, 2, &tmpPath, &newPath);
 }
 
 char *extend(int size, const char *content)
@@ -185,15 +209,15 @@ int _swap(int mode, void *first, void *second)
     double copyDouble;
     long copyInteger;
 
-    if(mode & 0x001){
+    if(mode & 0x01){
         copyInteger = *(long *)first;
         *(long *)first = *(long *)second;
         *(long *)second = copyInteger;
-    } else if(mode & 0x002){
+    } else if(mode & 0x02){
         copyDouble = *(double *)first;
         *(double *)first = *(double *)second;
         *(double *)second = copyDouble;
-    } else if(mode & 0x004){
+    } else if(mode & 0x04){
         copyString = extend(strlen(*(char **)first), *(char **)first);
         if(copyString == NULL) return -1;
 
@@ -220,16 +244,24 @@ int jsoneq(const char *json, jsmntok_t *tok, const char *s)
     }
 }
 
-int readJson(FILE *fcollection, const char *search, int mode, Result *result)
+int readJson(long sizeLine, FILE *fcollection, const char *search, int mode, Result *result)
 {
-    int r, i, j, cursor = 0, currentMaxSize, currentMaxSizeMatches, length;
-    char *json_string = NULL, *endptr = NULL, *temporaire = NULL;
+    int r;
+    int i;
+    int j;
+    int cursor = 0;
+    int currentMaxSize;
+    int currentMaxSizeMatches;
+    int length;
+    char *json_string = NULL;
+    char *endptr = NULL;
+    char *temporaire = NULL;
     jsmn_parser p;
-    jsmntok_t t[MAXSIZE];
+    jsmntok_t t[sizeLine];
 
-    json_string = NEW(char *, MAXSIZE);
+    json_string = NEW(char *, sizeLine);
     if(json_string == NULL) return -1;
-    while(fgets(json_string, MAXSIZE, fcollection) != NULL){
+    while(fgets(json_string, sizeLine, fcollection) != NULL){
         jsmn_init(&p);
         r = jsmn_parse(&p, json_string, strlen(json_string), t, sizeof(t) / sizeof(t[0]));
         if(r < 0){
@@ -264,7 +296,8 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
                     if(length > currentMaxSizeMatches){
                         currentMaxSizeMatches = length;
                         for(j = 0; j < cursor - 1; j++){
-                            result->_matches[j] = realloc(result->_matches[j], sizeof(char) * (currentMaxSizeMatches + 1));
+                            result->_matches[j] = extend(currentMaxSizeMatches, result->_matches[j]);
+                            if(result->_matches[j] == NULL) return strfree(-1, 1, &json_string);
                         }
                     }
 
@@ -277,7 +310,7 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
                 if(result->_match == NULL) return strfree(-1, 1, &json_string);
                 sprintf(result->_match, "%.*s", t[i + 1].end - t[i + 1].start, json_string + t[i + 1].start);
 
-                if(mode & 0x001){
+                if(mode & 0x01){
                     if(!cursor){
                         result->_integer = NEW(long, 1);
                         if(result->_integer == NULL) return strfree(-1, 1, &json_string);
@@ -293,7 +326,7 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
                        || (endptr == result->_match)){
                         return strfree(-1, 1, &json_string);
                     }
-                } else if(mode & 0x002){
+                } else if(mode & 0x02){
                     if(!cursor){
                         result->_real = NEW(double, 1);
                         if(result->_real == NULL) return strfree(-1, 1, &json_string);
@@ -309,7 +342,7 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
                        || (endptr == result->_match)){
                         return strfree(-1, 1, &json_string);
                     }
-                } else if(mode & 0x004){
+                } else if(mode & 0x04){
                     if(!cursor){
                         result->_string = NEW(char *, 1);
                         if(result->_string == NULL) return strfree(-1, 1, &json_string);
@@ -343,7 +376,7 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
         if(temporaire != NULL) free(temporaire);
         if(json_string != NULL) free(json_string);
 
-        json_string = NEW(char *, MAXSIZE);
+        json_string = NEW(char *, sizeLine);
         if(json_string == NULL) return -1;
     }
 
@@ -354,7 +387,8 @@ int readJson(FILE *fcollection, const char *search, int mode, Result *result)
 
 void quickSort(void *_array, int first, int last, int mode, char **matches)
 {
-    int left = first - 1, right = last + 1;
+    int left = first - 1;
+    int right = last + 1;
     long pivotInteger = ((long *)_array)[first];
     double pivotDouble = ((double *)_array)[first];
     char pivotString;
@@ -362,13 +396,13 @@ void quickSort(void *_array, int first, int last, int mode, char **matches)
     if(first >= last) return;
 
     while(1){
-        if(mode & 0x001){
+        if(mode & 0x01){
             do right--; while(((long *)_array)[right] > pivotInteger);
             do left++; while(((long *)_array)[left] < pivotInteger);
-        } else if(mode & 0x002){
+        } else if(mode & 0x02){
             do right--; while(((double *)_array)[right] > pivotDouble);
             do left++; while(((double *)_array)[left] < pivotDouble);
-        } else if(mode & 0x004){
+        } else if(mode & 0x04){
             pivotString = ((char **)_array)[first][0];
 
             do right--; while(((char **)_array)[right][0] > pivotString);
@@ -376,15 +410,15 @@ void quickSort(void *_array, int first, int last, int mode, char **matches)
         }
 
         if(left < right){
-            if(mode & 0x001){
+            if(mode & 0x01){
                 if(_swap(mode, &((long *)_array)[left], &((long *)_array)[right]) == -1) return;
-            } else if(mode & 0x002){
+            } else if(mode & 0x02){
                 if(_swap(mode, &((double *)_array)[left], &((double *)_array)[right]) == -1) return;
-            } else if(mode & 0x004){
+            } else if(mode & 0x04){
                 if(_swap(mode, &((char **)_array)[left], &((char **)_array)[right]) == -1) return;
             }
 
-            if(_swap(0x004, &matches[left], &matches[right]) == -1) return;
+            if(_swap(0x04, &matches[left], &matches[right]) == -1) return;
         } else {
             break;
         }

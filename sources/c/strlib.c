@@ -10,24 +10,31 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <ctype.h>
+#include <errno.h>
 
 #include "../h/strlib.h"
+#include "../h/interne.h"
 
 #define NEW(type, size) malloc(sizeof(type) * (size))
 
 
-void str(char **source, const char *string)
+int str(char **source, const char *string)
 {
     if(*source != NULL) free(*source);
 
-    // *source = malloc(sizeof(char) * (strlen(string) + 1));
     *source = NEW(char, strlen(string) + 1);
+    if(*source == NULL) return ENOMEM;
     strcpy(*source, string);
+
+    return 0;
 }
 
-void strconcat(char **dest, int limiter, ...)
+int strconcat(char **dest, int limiter, ...)
 {
-    char *value = NULL, *copy = NULL, *string = NULL;
+    char *value = NULL;
+    char *copy = NULL;
+    char *string = NULL;
     va_list args;
     int counter = 0;
 
@@ -40,7 +47,7 @@ void strconcat(char **dest, int limiter, ...)
 
         if(string != NULL) free(string);
         string = NEW(char, strlen(copy) + strlen(value) + 1);
-        if(string == NULL) return;
+        if(string == NULL) return ENOMEM;
         strcpy(string, copy);
         strcat(string, value);
     }
@@ -49,11 +56,13 @@ void strconcat(char **dest, int limiter, ...)
 
     if(*dest != NULL) free(*dest);
     *dest = NEW(char, strlen(string) + 1);
-    if(*dest == NULL) return;
+    if(*dest == NULL) return ENOMEM;
     strcpy(*dest, string);
 
     if(string != NULL) free(string);
     if(copy != NULL) free(copy);
+
+    return 0;
 }
 
 int strfree(int r_value, int limiter, ...)
@@ -72,4 +81,38 @@ int strfree(int r_value, int limiter, ...)
     va_end(args);
 
     return r_value;
+}
+
+char *strtrim(char *string)
+{
+  char *strim;
+
+  while(isspace((unsigned char)*string)) string++;
+
+  if(*string == 0)
+    return string;
+
+  strim = string + strlen(string) - 1;
+  while(strim > string && isspace((unsigned char)*strim)) strim--;
+
+  *(strim + 1) = 0;
+
+  return string;
+}
+
+int strsplit(char *string, const char *delimiter, int *length, char ***array)
+{
+    char *pstring;
+    int index = 0;
+
+    for(pstring = strtok(string, delimiter); pstring; pstring = strtok(NULL, delimiter)){
+        *array = realloc(*array, sizeof(char **) * ++index);
+        if(*array == NULL) return ENOMEM;
+
+        *(*array + index - 1) = pstring;
+    }
+
+    *length = index;
+
+    return 0;
 }
