@@ -18,7 +18,6 @@
 
 #define NEW(type, size) malloc(sizeof(type) * (size))
 
-
 int str(char **source, const char *string)
 {
     if(*source != NULL) free(*source);
@@ -37,13 +36,18 @@ int strconcat(char **dest, int limiter, ...)
     char *string = NULL;
     va_list args;
     int counter = 0;
+    int status;
 
     va_start(args, limiter);
 
-    str(&string, "");
+    status = str(&string, "");
+    if(status)
+        return status;
     for( ; counter < limiter; counter++){
         value = va_arg(args, char *);
-        str(&copy, string);
+        status = str(&copy, string);
+        if(status)
+            return status;
 
         if(string != NULL) free(string);
         string = NEW(char, strlen(copy) + strlen(value) + 1);
@@ -85,19 +89,19 @@ int strfree(int r_value, int limiter, ...)
 
 char *strtrim(char *string)
 {
-  char *strim;
+    char *strim;
 
-  while(isspace((unsigned char)*string)) string++;
+    while(isspace((unsigned char)*string)) string++;
 
-  if(*string == 0)
+    if(*string == 0)
     return string;
 
-  strim = string + strlen(string) - 1;
-  while(strim > string && isspace((unsigned char)*strim)) strim--;
+    strim = string + strlen(string) - 1;
+    while(strim > string && isspace((unsigned char)*strim)) strim--;
 
-  *(strim + 1) = 0;
+    *(strim + 1) = 0;
 
-  return string;
+    return string;
 }
 
 int strsplit(char *string, const char *delimiter, int *length, char ***array)

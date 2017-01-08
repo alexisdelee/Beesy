@@ -20,7 +20,6 @@
 #include "../h/interne.h"
 
 #define NEW(type, size) malloc(sizeof(type) * (size))
-#define ERR_DEBUG(err) __FILE__, __LINE__ + err
 
 long fsize(FILE *file)
 {
@@ -37,13 +36,14 @@ long fsize(FILE *file)
 
 int prohibitedCharacters(const char *string)
 {
-    if(strchr(string, '_') != NULL) return -1;
-    if(strstr(string, "~$") != NULL) return -1;
+    // if(strchr(string, '_') != NULL) return EINVAL;
+    if(strchr(string, '.') != NULL) return EINVAL;
+    if(strstr(string, "~$") != NULL) return EINVAL;
 
-    return 1;
+    return 0;
 }
 
-int check(int limiter, ...)
+int check(int size, int limiter, ...)
 {
     char **path;
     va_list args;
@@ -54,8 +54,8 @@ int check(int limiter, ...)
     for( ; counter < limiter; counter++){
         path = va_arg(args, char **);
 
-        if(strlen(*path) > 64
-           || prohibitedCharacters(*path) == -1){
+        if(strlen(*path) > size
+           || prohibitedCharacters(*path)){
             error = 1;
             break;
         }
@@ -67,7 +67,77 @@ int check(int limiter, ...)
     else return 0;
 }
 
-int sha1(char *hash, const char *password)
+int parseString(Settings *settings, char *string)
+{
+    char *strim = NULL;
+    char *options = NULL;
+    int status;
+    int index;
+
+    strim = strtrim(string);
+
+    status = check(72, 1, &strim);
+    if(status)
+        return status;
+
+    if((index = strcspn(strim, "=")) == strlen(strim))
+        return EINTR;
+
+    options = strim + index + 1;
+
+    if(strstr(strim, "basedir") != NULL){
+        if(strlen(options) > 64) return EINTR;
+        strncpy(settings->baseDir, options, 64);
+        printf("[OK] %s\n", strim);
+    } else if (strstr(strim, "security") != NULL) {
+        if(!strcmp("true", options)){
+            settings->permission |= SECURITY;
+            printf("[OK] %s\n", strim);
+        } else if(!strcmp("false", options)){
+            printf("[OK] %s\n", strim);
+        }
+    }
+
+    return 0;
+}
+
+int parseNumber(Settings *settings, char *string)
+{
+    char *strim = NULL;
+    char *options = NULL;
+    char *endptr = NULL;
+    int status;
+    int index;
+    long result;
+
+    strim = strtrim(string);
+
+    status = check(72, 1, &strim);
+    if(status)
+        return status;
+
+    if((index = strcspn(strim, "=")) == strlen(strim))
+        return EINTR;
+
+    options = strim + index + 1;
+    result = strtol(options, &endptr, 10);
+
+    if((errno == ERANGE && result == LONG_MAX)
+       || (result <= 0)
+       || (errno != 0 && result == 0)
+       || (endptr == options)){
+        return EINTR;
+    }
+
+    if(strstr(strim, "size_line") != NULL){
+        settings->sizeLine = result;
+        printf("[OK] %s\n", strim);
+    }
+
+    return 0;
+}
+
+void sha1(char *hash, const char *password)
 {
     SHA1Context sha;
     uint8_t uint8_digest[20];
@@ -87,9 +157,8 @@ int sha1(char *hash, const char *password)
     }
 
     strcpy(hash, string_digest);
+    hash[40] = '\0';
     SHA1Reset(0);
-
-    return 1;
 }
 
 int _xor(const char *password, const char *raw, const char *encrypted, short mode)
@@ -105,9 +174,9 @@ int _xor(const char *password, const char *raw, const char *encrypted, short mod
             while((c = fgetc(source)) != EOF){
                 if(mode == 0){
                     c ^= password[pos];
-                    c = ~c;
+                    // c = ~c;
                 } else {
-                    c = ~c;
+                    // c = ~c;
                     c ^= password[pos];
                 }
 
@@ -142,17 +211,17 @@ int confidential(const char *directory, const char *secret, short mode)
     if(folder == NULL) return ENOENT;
 
     while((readFile = readdir(folder)) != NULL){
+        if(strstr(".", readFile->d_name) != NULL
+           || strstr("..", readFile->d_name) != NULL
+           || !strcmp("passwd", readFile->d_name)){
+            continue;
+        }
+
         if(!mode){
-            if(strstr(".", readFile->d_name) == NULL
-               && strstr("..", readFile->d_name) == NULL
-               && strpbrk("~$", readFile->d_name) != NULL){
+            if(strpbrk("~$", readFile->d_name) != NULL){
                 status = strconcat(&tmpPath, 3, directory, "/", readFile->d_name);
                 if(status)
                     return status;
-
-                /* newPath = NEW(char *, strlen(tmpPath) - 2);
-                if(newPath == NULL) return ENOMEM;
-                strcpy(newPath, readFile->d_name + 2); */
 
                 newPath = extend(strlen(tmpPath) - 3, readFile->d_name + 2);
                 if(newPath == NULL) return ENOMEM;
@@ -164,9 +233,7 @@ int confidential(const char *directory, const char *secret, short mode)
                 continue;
             }
         } else {
-            if(strstr(".", readFile->d_name) == NULL
-               && strstr("..", readFile->d_name) == NULL
-               && strpbrk("~$", readFile->d_name) == NULL){
+            if(strpbrk("~$", readFile->d_name) == NULL){
                 status = strconcat(&tmpPath, 3, directory, "/", readFile->d_name);
                 if(status)
                     return status;

@@ -20,7 +20,6 @@
 #include "../h/control.h"
 
 #define NEW(type, size) malloc(sizeof(type) * (size))
-#define ERR_DEBUG(err) __FILE__, __LINE__ + err
 #define ENCRYPT 0
 #define DECRYPT 1
 
@@ -28,45 +27,153 @@ int beesy_settings(Settings *settings)
 {
     FILE *fconfiguration = NULL;
     char content[200];
-    char *configuration = NULL;
-    char *endptr = NULL;
+    int status;
+
+    settings->permission = 0;
+    settings->sizeLine = 1000; // by default
 
     fconfiguration = fopen("beesy.inc", "r");
     if(fconfiguration != NULL){
         while(fgets(content, 200, fconfiguration) != NULL){
-            configuration = strtrim(content);
-            if(configuration[0] != '#' && strlen(configuration) >= 2){
-                if(strstr(configuration, "basedir") != NULL){
-                    strncpy(settings->baseDir, strchr(configuration, '=') + 1, 64);
-                } else if(strstr(configuration, "initialization_commit") != NULL) {
-                    if(!strcmp("false", strchr(configuration, '=') + 1))
-                        settings->initializationCommit = 0;
-                    else
-                        settings->initializationCommit = 1;
-                } else if(strstr(configuration, "size_line") != NULL){
-                    settings->sizeLine = strtol(strchr(configuration, '=') + 1, &endptr, 10) + 1;
-
-                    if((errno == ERANGE && (settings->sizeLine == LONG_MAX || settings->sizeLine == LONG_MIN))
-                       || (errno != 0 && settings->sizeLine == 0)
-                       || (endptr == strchr(configuration, '=') + 1)){
-                        settings->sizeLine = 1001;
-                    }
-                }
+            if(content[0] == '#'){
+                continue;
+            } else if(strstr(content, "basedir") != NULL
+               || strstr(content, "security") != NULL){
+                status = parseString(settings, content);
+            } else if(strstr(content, "size_line") != NULL){
+                status = parseNumber(settings, content);
+            } else {
+                continue;
             }
 
-            strfree(0, 1, &configuration);
+            if(status)
+                return status;
         }
 
         fclose(fconfiguration);
     } else {
-        return -1;
+        return ENOENT;
     }
 
-    // if(checkPath(settings->sizePath, 1, &settings->baseDir) == -1) return -1;
+    printf("\n");
 
-    settings->permission = WAIT;
+    fconfiguration = fopen("marker", "r");
+    if(fconfiguration == NULL){
+        fconfiguration = fopen("marker", "w");
+        if(fconfiguration == NULL){
+            return EINTR;
+        } else {
+            settings->permission |= UNINITIATED;
+        }
+    } else {
+        settings->permission |= WAIT;
+    }
 
-    return 1;
+    fclose(fconfiguration);
+    return 0;
+}
+
+int beesy_connect_root(Settings *settings, const char *password)
+{
+    FILE *faccess = NULL;
+    char secret[41] = "";
+    char *accessPath = NULL;
+    char hash[41] = "";
+    int status;
+
+    status = strconcat(&accessPath, 2, settings->baseDir, "root");
+    if(status)
+        return status;
+
+    faccess = fopen(accessPath, "r");
+    if(faccess != NULL){
+        fgets(secret, 41, faccess);
+        sha1(hash, password);
+
+        fclose(faccess);
+    } else {
+        strfree(EINTR, 1, &accessPath);
+        exit(-1);
+    }
+
+    if(strcmp(hash, secret))
+        return strfree(EACCES, 1, &accessPath);
+
+    settings->permission |= ROOT;
+    return strfree(0, 1, &accessPath);
+}
+
+int beesy_init_root(Settings *settings)
+{
+    FILE *faccess = NULL;
+    char password[65] = "";
+    char *strim = NULL;
+    char *accessPath = NULL;
+    char hash[41] = "";
+    int status;
+
+    printf("first connection, set root password: ");
+    fgets(password, 65, stdin);
+
+    strim = strtrim(password);
+
+    status = strconcat(&accessPath, 2, settings->baseDir, "root");
+    if(status)
+        // return strfree(status, 1, &strim);
+        return status;
+
+    faccess = fopen(accessPath, "w");
+    if(faccess != NULL){
+        sha1(hash, strim);
+        fprintf(faccess, "%s", hash);
+        fclose(faccess);
+    } else {
+        strfree(EINTR, 1, &accessPath);
+        exit(-1);
+    }
+
+    settings->permission |= ROOT;
+    return strfree(0, 1, &accessPath);
+}
+
+int beesy_boot(Settings *settings)
+{
+    FILE *frefs = NULL;
+    char *frefsPath = NULL;
+    char *databasePath = NULL;
+    int status;
+
+    status = beesy_init_root(settings);
+    if(status)
+        return status;
+
+    // create "current" directory
+    status = strconcat(&databasePath, 2, settings->baseDir, "current");
+    if(status)
+        return status;
+    _mkdir(databasePath);
+
+    // create directory
+    status = strconcat(&databasePath, 2, settings->baseDir, "tags");
+    if(status)
+        return status;
+    _mkdir(databasePath);
+
+    // modification refs file
+    status = strconcat(&frefsPath, 2, settings->baseDir, "refs");
+    if(status)
+        return status;
+
+    frefs = fopen(frefsPath, "wb");
+    if(frefs != NULL)
+        fclose(frefs);
+    else
+        return strfree(EINTR, 2, &databasePath, &frefsPath);
+
+    settings->permission ^= UNINITIATED;
+    settings->permission |= WAIT;
+
+    return strfree(0, 2, &databasePath, &frefsPath);
 }
 
 int beesy_commit(Settings *settings)
@@ -77,72 +184,190 @@ int beesy_commit(Settings *settings)
     char seed[12] = "";
     char uniqID[41] = "";
     char *command = NULL;
+    int status;
+
+    if(!(settings->permission & ROOT)) return EACCES;
 
     sprintf(seed, "%ld", time(NULL));
     sha1(uniqID, seed);
 
-    // create directory
-    strconcat(&databasePath, 2, settings->baseDir, "tags");
+    status = strconcat(&databasePath, 3, settings->baseDir, "tags/", uniqID);
+    if(status)
+        return status;
     _mkdir(databasePath);
 
-    strconcat(&databasePath, 3, settings->baseDir, "tags/", uniqID);
-    _mkdir(databasePath);
-
-    // copy database and collections
-    strconcat(&command, 5, "robocopy ", settings->baseDir, "current ", databasePath, " *.* /e > nul");
+    // copy databases and collections
+    status = strconcat(&command, 5, "robocopy ", settings->baseDir, "current ", databasePath, " *.* /e > nul");
+    if(status)
+        return status;
     system(command);
 
-    // add/modification refs file
-    strconcat(&frefsPath, 2, settings->baseDir, "refs");
+    // modification refs file
+    status = strconcat(&frefsPath, 2, settings->baseDir, "refs");
+    if(status)
+        return status;
     frefs = fopen(frefsPath, "ab");
     if(frefs != NULL){
         fwrite(uniqID, sizeof(char), 40, frefs);
         fclose(frefs);
 
-        return strfree(1, 3, &databasePath, &frefsPath, &system);
+        printf("commit %s\n", uniqID);
+
+        return strfree(0, 3, &databasePath, &frefsPath, &system);
     } else {
-        return strfree(-1, 3, &databasePath, &frefsPath, &system);
+        return strfree(EINTR, 3, &databasePath, &frefsPath, &system);
     }
 }
 
-int beesy_rollback(Settings settings, const char *hash)
+int beesy_rollback(Settings *settings, const char *hash)
 {
     char *command = NULL;
+    int status;
 
-    if(strlen(hash) != 40) return -1;
+    if(!(settings->permission & ROOT) || !(settings->permission & WAIT)) return EACCES;
+    if(strlen(hash) != 40) return EINVAL;
 
-    strconcat(&command, 3, "rd \"", settings.baseDir, "current\" /s /q > nul");
+    status = strconcat(&command, 3, "rd \"", settings->baseDir, "current\" /s /q > nul");
+    if(status)
+        return status;
     system(command);
 
-    strconcat(&command, 2, settings.baseDir, "current");
+    status = strconcat(&command, 2, settings->baseDir, "current");
+    if(status)
+        return status;
     _mkdir(command);
 
-    strconcat(&command, 7, "robocopy ", settings.baseDir, "tags/", hash, " ", settings.baseDir, "current/ *.* /e > nul");
+    status = strconcat(&command, 7, "robocopy ", settings->baseDir, "tags/", hash, " ", settings->baseDir, "current/ *.* /e > nul");
+    if(status)
+        return status;
     system(command);
 
-    return strfree(1, 1, &command);
+    printf("databases are now at %s\n", hash);
+
+    return strfree(0, 1, &command);
 }
 
-int beesy_log(Settings settings)
+int beesy_log(Settings *settings)
 {
     FILE *frefs = NULL;
     char *frefsPath = NULL;
     char hash[41] = "";
+    int status;
 
-    if(strlen(settings.baseDir) < 2) return -1;
+    if(strlen(settings->baseDir) < 2) return -1;
 
-    strconcat(&frefsPath, 2, settings.baseDir, "refs");
+    status = strconcat(&frefsPath, 2, settings->baseDir, "refs");
+    if(status)
+        return status;
+
     frefs = fopen(frefsPath, "rb");
     if(frefs != NULL){
         while(fread(hash, sizeof(char), 40, frefs), !feof(frefs)){
-            printf("%s\n", hash);
+            printf("commit %s\n", hash);
         }
         fclose(frefs);
     } else {
-        return strfree(-1, 1, &frefsPath);
+        return strfree(EINTR, 1, &frefsPath);
     }
 
-    return strfree(1, 1, &frefsPath);
+    return strfree(0, 1, &frefsPath);
+}
+
+int initPasswd(Settings *settings, const char *database)
+{
+    FILE *froot = NULL;
+    FILE *passwd = NULL;
+    char *path = NULL;
+    char content[41] = "";
+    char fileHash[41] = "";
+    char rootHash[41] = "";
+    char hash[41] = "";
+    int status;
+    int index;
+
+    status = strconcat(&path, 2, settings->baseDir, "root");
+    if(status)
+        return status;
+
+    froot = fopen(path, "r");
+    if(froot != NULL){
+        fgets(content, 41, froot);
+        sprintf(content, "%.40s", content);
+        fclose(froot);
+    } else {
+        return strfree(EINTR, 1, &path);
+    }
+
+    sha1(fileHash, database);
+    sha1(rootHash, content);
+
+    for(index = 0; index < 41; index++){
+        hash[index] = (fileHash[index] ^ rootHash[index]) ^ settings->passdbHash[index];
+    }
+
+    status = strconcat(&path, 4, settings->baseDir, "current/", database, "/passwd");
+    if(status)
+        return status;
+
+    passwd = fopen(path, "w");
+    if(passwd != NULL){
+        fprintf(passwd, "%s", hash);
+        fclose(passwd);
+    } else {
+        return strfree(EINTR, 1, &path);
+    }
+
+    return strfree(0, 1, &path);
+}
+
+int idPasswd(Settings *settings, const char *database)
+{
+    FILE *froot = NULL;
+    FILE *passwd = NULL;
+    char *path = NULL;
+    char content[41] = "";
+    char fileHash[41] = "";
+    char rootHash[41] = "";
+    char hash[41] = "";
+    char dbHash[41] = "";
+    int status;
+    int index;
+
+    status = strconcat(&path, 2, settings->baseDir, "root");
+    if(status)
+        return status;
+
+    froot = fopen(path, "r");
+    if(froot != NULL){
+        fgets(content, 41, froot);
+        sprintf(content, "%.40s", content);
+        fclose(froot);
+    } else {
+        return strfree(EINTR, 1, &path);
+    }
+
+    status = strconcat(&path, 4, settings->baseDir, "current/", database, "/passwd");
+    if(status)
+        return status;
+
+    passwd = fopen(path, "r");
+    if(passwd != NULL){
+        fgets(fileHash, 41, passwd);
+        fclose(passwd);
+    } else {
+        return strfree(EINTR, 1, &path);
+    }
+
+    sha1(rootHash, content);
+    sha1(dbHash, database);
+
+    for(index = 0; index < 41; index++)
+        hash[index] = (fileHash[index] ^ settings->passdbHash[index]) ^ rootHash[index];
+
+    if(!strcmp(hash, dbHash))
+        return strfree(0, 1, &path);
+    else
+        return strfree(EACCES, 1, &path);
 }
 
 int beesy_connect_database(Settings *settings, const char *database, const char *password)
@@ -152,35 +377,46 @@ int beesy_connect_database(Settings *settings, const char *database, const char 
 
     if(!(settings->permission & WAIT)) return EACCES;
 
-    status = strconcat(&databasePath, 2, settings->baseDir, "current/");
-    if(status)
-        return status;
-
-    _mkdir(databasePath);
+    settings->passdbHash[0] = '\0';
+    sha1(settings->passdbHash, password);
 
     status = strconcat(&databasePath, 3, settings->baseDir, "current/", database);
     if(status)
         return status;
 
-    if(!_mkdir(databasePath) && settings->initializationCommit){
-        beesy_commit(settings);
+    if(!_mkdir(databasePath)){
+        status = initPasswd(settings, database);
+        if(status)
+            return status;
+
+        if(settings->permission & SECURITY){
+            settings->permission |= ROOT;
+            status = beesy_commit(settings);
+            settings->permission ^= ROOT;
+            if(status)
+                return status;
+        }
+    } else {
+        status = idPasswd(settings, database);
+        if(status)
+            return status;
     }
 
     strcpy(settings->currentDatabase, databasePath);
-    status = confidential(databasePath, password, DECRYPT);
+    status = confidential(databasePath, settings->passdbHash, DECRYPT);
     if(status)
         return strfree(status, 1, &databasePath);
 
-    settings->permission = ADVANCED;
+    settings->permission = ((settings->permission >> 29) << 29) | ADVANCED; // reset permissions without altering the root mode
     return strfree(0, 1, &databasePath);
 }
 
-int beesy_close_database(Settings *settings, const char *password)
+int beesy_close_database(Settings *settings)
 {
-    if(!(settings->permission & (ADVANCED|ROOT))) return EACCES;
+    if(!(settings->permission & ADVANCED)) return EACCES;
 
-    settings->permission = WAIT;
-    return confidential(settings->currentDatabase, password, ENCRYPT);
+    settings->permission = ((settings->permission >> 29) << 29) | WAIT; // reset permissions without altering the root mode
+    return confidential(settings->currentDatabase, settings->passdbHash, ENCRYPT);
 }
 
 int beesy_search_document(Settings settings, const char *collection, int mode, const char *criteria, void *value, Request *request)
@@ -359,140 +595,33 @@ int beesy_drop_document(Settings settings, const char *collection, int mode, con
     return strfree(1, 2, &collectionPath, &copyPath);
 }
 
-int beesy_drop_collection(Settings settings, const char *collection)
+int beesy_drop_collection(Settings *settings, const char *collection)
 {
     char *collectionPath = NULL;
-
-    if(!settings.permission) return -1;
-    if(check(1, &collection) == -1) return -1;
-
-    strconcat(&collectionPath, 3, settings.currentDatabase, "/", collection);
-    if(remove(collectionPath)) return strfree(-1, 1, &collectionPath);
-
-    strconcat(&collectionPath, 3, settings.currentDatabase, "/~$", collection);
-    if(remove(collectionPath)) return strfree(-1, 1, &collectionPath);
-
-    return strfree(1, 1, &collectionPath);
-}
-
-void beesy_error(int error, int log)
-{
-    if(error == EILSEQ)
-        printf("fatal error: ");
-    else
-        printf("error: ");
-
-    switch(error){
-        case EPERM : printf("operation not permitted\n"); break; // 1
-        case ENOENT: printf("no such directory\n"); break;
-        case EINTR : printf("interrupted function\n"); break; // 4
-        case E2BIG : printf("argument list too long\n"); break; // 7
-        case EAGAIN: printf("too few arguments\n"); break; // 11
-        case ENOMEM: printf("not enough memory\n"); break; // 12
-        case EACCES: printf("permission denied\n"); break; // 13
-        case EINVAL: printf("invalid argument\n"); break; // 22
-        case ENOTTY: printf("inappropriate input control operation\n"); break; // 25
-        case EILSEQ: printf("illegal byte sequence\n"); break; // 42
-    }
-}
-
-int beesy_argv(char *command, Terminal *terminal)
-{
-    char *pcommand = NULL;
-    char *_command = NULL;
     int status;
 
-    if(str(&pcommand, command)) return ENOMEM;
+    if(!(settings->permission & ADVANCED)) return EACCES;
+    if(!strcmp("passwd", collection)) return EACCES;
 
-    _command = strtrim(pcommand);
-
-    status = strsplit(_command, " ", &terminal->argc, &terminal->argv);
-    if(status)
-        return strfree(status, 2, &pcommand, &_command);
-
-    return 0;
-}
-
-int beesy_detect(Settings *settings, Terminal terminal, char (*commands)[2][100], char **header)
-{
-    int cursor = 0;
-    int helped = 0;
-
-    for( ; cursor < 9; cursor++){
-        if(!strcmp("help", terminal.argv[0])){
-            printf("[%s] %s\n", commands[cursor][0], commands[cursor][1]);
-            helped = 1;
-        } else if(!strcmp(commands[cursor][0], terminal.argv[0])){
-            return beesy_run(settings, terminal, cursor, header);
-        }
-    }
-
-    if(!helped) return EPERM;
-    else return 0;
-}
-
-int beesy_run(Settings *settings, Terminal terminal, int id, char **header)
-{
-    int status;
-
-    switch(id){
-        case 1:
-            if(terminal.argc < 3) return EAGAIN;
-            if(terminal.argc > 3) return E2BIG;
-
-            status = check(2, &terminal.argv[1], &terminal.argv[2]);
-            if(status)
-                return status;
-
-            status = beesy_connect_database(settings, terminal.argv[1], terminal.argv[2]);
-            if(status){
-                return status;
-            }
-
-            printf("connect to the database \"%s\"...\n", terminal.argv[1]);
-            sprintf(*header, "%s>", terminal.argv[1]);
-
-            break;
-        case 5:
-            if(terminal.argc < 2) return EAGAIN;
-            if(terminal.argc > 2) return E2BIG;
-
-            status = check(1, &terminal.argv[1]);
-            if(status)
-                return status;
-
-            status = beesy_close_database(settings, terminal.argv[1]);
-            if(status)
-                return status;
-
-            printf("disconnect to the current database...\n");
-            sprintf(*header, ">");
-
-            break;
-    }
-
-    return 0;
-}
-
-int beesy_analyze(Settings *settings, Terminal terminal, char **header)
-{
-    char commands[9][2][100] = {
-        {"help", "help on database methods"},
-        {"connect", "connexion to the database"},
-        {"search", "search for documents in collection"},
-        {"insert", "insert/update documents in collection"},
-        {"drop", "delete document/collection/database"},
-        {"disconnect", "close current database"},
-        {"commit", "back up"},
-        {"rollback", "back to an old version"},
-        {"log", "display commits history"}
-    };
-    int status;
-
-    if(terminal.argc < 1) return ENOTTY;
-    status = beesy_detect(settings, terminal, commands, header);
+    status = strconcat(&collectionPath, 3, settings->currentDatabase, "/", collection);
     if(status)
         return status;
+    remove(collectionPath);
+    if(errno == 2) return strfree(errno, 1, &collectionPath);
 
-    return 0;
+    status = strconcat(&collectionPath, 3, settings->currentDatabase, "/~$", collection);
+    if(status)
+        return status;
+    remove(collectionPath);
+    if(errno == 2) return strfree(errno, 1, &collectionPath);
+
+    if(settings->permission & SECURITY){
+        settings->permission |= ROOT;
+        status = beesy_commit(settings);
+        settings->permission ^= ROOT;
+        if(status)
+            return status;
+    }
+
+    return strfree(0, 1, &collectionPath);
 }

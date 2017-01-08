@@ -9,9 +9,11 @@
 #ifndef CONTROL_H_INCLUDED
 #define CONTROL_H_INCLUDED
 
-#define WAIT        0x001
-#define ADVANCED    0x002
-#define ROOT        0x004
+#define UNINITIATED 0x001
+#define WAIT        0x002
+#define ADVANCED    0x004
+#define SECURITY    0x20000000
+#define ROOT        0x40000000
 
 #define INTEGER     0x001
 #define REAL        0x002
@@ -28,9 +30,9 @@
 typedef struct {
     char baseDir[65];
     char currentDatabase[65];
-    int initializationCommit;
+    char passdbHash[41];
     int permission;
-    int log;
+    int root;
     long sizeLine;
 } Settings;
 
@@ -39,11 +41,6 @@ typedef struct {
     char **document;
 } Request;
 
-typedef struct {
-    int argc;
-    char **argv;
-} Terminal;
-
 /*
 ** Description: parse the file beesy.inc and passes the result in the structure of type Settings
 **
@@ -51,6 +48,10 @@ typedef struct {
 ** <structA> configuration options
 */
 int beesy_settings(Settings *);
+
+int beesy_connect_root(Settings *, const char *);
+int beesy_init_root(Settings *);
+int beesy_boot(Settings *);
 
 /*
 ** Description: commit
@@ -67,7 +68,7 @@ int beesy_commit(Settings *);
 ** <structA> configuration options
 ** <strA> string storing the hash
 */
-int beesy_rollback(Settings, const char *);
+int beesy_rollback(Settings *, const char *);
 
 /*
 ** Description: display commits history
@@ -75,7 +76,10 @@ int beesy_rollback(Settings, const char *);
 ** Syntax: beesy_log(structA)
 ** <structA> configuration options
 */
-int beesy_log(Settings);
+int beesy_log(Settings *);
+
+int initPasswd(Settings *, const char *);
+int idPasswd(Settings *, const char *);
 
 /*
 ** Description: connexion to the database (creation if none exists)
@@ -90,11 +94,10 @@ int beesy_connect_database(Settings *, const char *, const char *);
 /*
 ** Description: take care of the correct closing to the database
 **
-** Syntax: beesy_close_database(structA, strA)
+** Syntax: beesy_close_database(structA)
 ** <structA> configuration options
-** <strA> string storing the password
 */
-int beesy_close_database(Settings *, const char *);
+int beesy_close_database(Settings *);
 
 /*
 ** Description: search for documents in a collection
@@ -121,11 +124,6 @@ int beesy_search_document(Settings, const char *, int, const char *, void *, Req
 */
 int beesy_drop_document(Settings, const char *, int, const char *, void *);
 
-int beesy_drop_collection(Settings, const char *);
-void beesy_error(int, int);
-int beesy_argv(char *, Terminal *);
-int beesy_analyze(Settings *, Terminal, char **);
-int beesy_detect(Settings *, Terminal, char (*)[2][100], char **);
-int beesy_run(Settings *, Terminal, int, char **);
+int beesy_drop_collection(Settings *, const char *);
 
 #endif // CONTROL_H_INCLUDED

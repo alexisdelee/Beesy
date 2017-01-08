@@ -10,6 +10,7 @@
 #define INTERNE_H_INCLUDED
 
 #include "../../ext/jsmn/include/jsmn.h"
+#include "control.h"
 
 typedef struct {
     char *_match;
@@ -29,8 +30,9 @@ typedef struct {
 long fsize(FILE *);
 
 int prohibitedCharacters(const char *);
-
-int check(int, ...);
+int check(int, int, ...);
+int parseString(Settings *, char *);
+int parseNumber(Settings *, char *);
 
 /*
 ** Description: get a hash of a string from the hash algorithm sha1
@@ -39,7 +41,7 @@ int check(int, ...);
 ** <strA> string storing the hash
 ** <strB> string to hash
 */
-int sha1(char *, const char *);
+void sha1(char *, const char *);
 
 /*
 ** Description: encryption / decryption by xor method

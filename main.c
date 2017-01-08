@@ -4,13 +4,11 @@
 #include <errno.h>
 
 #include "sources/h/strlib.h"
+#include "sources/h/shell.h"
 #include "sources/h/control.h"
 
 int main(int argc, char **argv)
 {
-    Request request;
-    int value = 19;
-
     /* Settings settings;
     [X] beesy_settings(&settings);
     [X] beesy_connect_database(&settings, "esgi", "P2wV7UUQ")
@@ -46,7 +44,6 @@ int main(int argc, char **argv)
 
     /* <shell> */
     char command[300] = "";
-    char *header = NULL;
     int status;
     int index;
     Settings settings;
@@ -57,14 +54,13 @@ int main(int argc, char **argv)
            \nFor interactive help, type \"help\".\n\n");
 
     // configure of the application from the file beesy.inc
-    settings.log = 0;
-    if(beesy_settings(&settings) == -1){
-        beesy_error(EILSEQ, settings.log);
+    if(beesy_settings(&settings)){
+        beesy_error(EILSEQ);
         exit(-1);
     }
 
-    if(str(&header, ">")){
-        beesy_error(ENOMEM, settings.log);
+    if(str(&terminal.header, "")){
+        beesy_error(ENOMEM);
         exit(-1);
     }
 
@@ -74,22 +70,23 @@ int main(int argc, char **argv)
         terminal.argv = NULL;
 
         // display of the header
-        printf("%s ", header);
+        printf("%s%c ", terminal.header, settings.permission & ROOT ? '#' : '$');
 
         // input of the command
+        fflush(stdin);
         fgets(command, 300, stdin);
 
         // cleaning and splitting of the input variable
         status = beesy_argv(command, &terminal);
         if(status){
-            beesy_error(status, settings.log);
+            beesy_error(status);
             exit(-1);
         }
 
         // analysis of the input variable
-        status = beesy_analyze(&settings, terminal, &header);
+        status = beesy_analyze(&settings, &terminal);
         if(status)
-            beesy_error(status, settings.log);
+            beesy_error(status);
 
         // remember to free memory
         for(index = 0; index < terminal.argc; index++)
@@ -98,5 +95,5 @@ int main(int argc, char **argv)
     } while(1);
     /* </shell> */
 
-    return 0;
+    return strfree(0, 1, &terminal.header);
 }
