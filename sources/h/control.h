@@ -51,6 +51,7 @@ int beesy_settings(Settings *);
 
 int beesy_connect_root(Settings *, const char *);
 int beesy_init_root(Settings *);
+int configurationOfMarker(Settings *);
 int beesy_boot(Settings *);
 
 /*
@@ -110,7 +111,7 @@ int beesy_close_database(Settings *);
 ** <void> data
 ** <structB> structure of type Request containing the results
 */
-int beesy_search_document(Settings, const char *, int, const char *, void *, Request *);
+int beesy_search_document(Settings *, const char *, int, const char *, void *, Request *);
 
 /*
 ** Description: deleting documents in a collection
@@ -122,7 +123,7 @@ int beesy_search_document(Settings, const char *, int, const char *, void *, Req
 ** <strB> search criterion
 ** <void> data
 */
-int beesy_drop_document(Settings, const char *, int, const char *, void *);
+int beesy_drop_document(Settings *, const char *, int, const char *, void *);
 
 int beesy_drop_collection(Settings *, const char *);
 

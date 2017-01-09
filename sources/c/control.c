@@ -57,19 +57,10 @@ int beesy_settings(Settings *settings)
 
     printf("\n");
 
-    fconfiguration = fopen("marker", "r");
-    if(fconfiguration == NULL){
-        fconfiguration = fopen("marker", "w");
-        if(fconfiguration == NULL){
-            return EINTR;
-        } else {
-            settings->permission |= UNINITIATED;
-        }
-    } else {
-        settings->permission |= WAIT;
-    }
+    // test
+    settings->permission |= UNINITIATED;
+    // test
 
-    fclose(fconfiguration);
     return 0;
 }
 
@@ -119,7 +110,6 @@ int beesy_init_root(Settings *settings)
 
     status = strconcat(&accessPath, 2, settings->baseDir, "root");
     if(status)
-        // return strfree(status, 1, &strim);
         return status;
 
     faccess = fopen(accessPath, "w");
@@ -136,12 +126,37 @@ int beesy_init_root(Settings *settings)
     return strfree(0, 1, &accessPath);
 }
 
+int configurationOfMarker(Settings *settings)
+{
+    FILE *fconfiguration = NULL;
+
+    fconfiguration = fopen("marker", "r");
+    if(fconfiguration == NULL){
+        fconfiguration = fopen("marker", "w");
+        if(fconfiguration == NULL){
+            return EINTR;
+        }
+    } else {
+        settings->permission |= WAIT;
+    }
+
+    fclose(fconfiguration);
+    return 0;
+}
+
 int beesy_boot(Settings *settings)
 {
     FILE *frefs = NULL;
     char *frefsPath = NULL;
     char *databasePath = NULL;
     int status;
+
+    status = configurationOfMarker(settings);
+    if(status)
+        return status;
+
+    if(settings->permission & WAIT)
+        return 0;
 
     status = beesy_init_root(settings);
     if(status)
@@ -153,13 +168,13 @@ int beesy_boot(Settings *settings)
         return status;
     _mkdir(databasePath);
 
-    // create directory
+    // create "tags" directory
     status = strconcat(&databasePath, 2, settings->baseDir, "tags");
     if(status)
         return status;
     _mkdir(databasePath);
 
-    // modification refs file
+    // modification "refs" file
     status = strconcat(&frefsPath, 2, settings->baseDir, "refs");
     if(status)
         return status;
@@ -172,6 +187,8 @@ int beesy_boot(Settings *settings)
 
     settings->permission ^= UNINITIATED;
     settings->permission |= WAIT;
+
+    printf("logged in as domain administrator...\n");
 
     return strfree(0, 2, &databasePath, &frefsPath);
 }
@@ -419,29 +436,35 @@ int beesy_close_database(Settings *settings)
     return confidential(settings->currentDatabase, settings->passdbHash, ENCRYPT);
 }
 
-int beesy_search_document(Settings settings, const char *collection, int mode, const char *criteria, void *value, Request *request)
+int beesy_search_document(Settings *settings, const char *collection, int mode, const char *criteria, void *value, Request *request)
 {
+    Result result;
     FILE *fcollection = NULL;
     char *collectionPath = NULL;
     int index;
+    int status;
 
     request->length = 0;
-    if(!settings.permission) return -1;
+    if(!(settings->permission & ADVANCED)) return EACCES;
 
-    strconcat(&collectionPath, 3, settings.currentDatabase, "/~$", collection);
+    status = strconcat(&collectionPath, 3, settings->currentDatabase, "/~$", collection);
+    if(status)
+        return status;
+
     fcollection = fopen(collectionPath, "r");
     if(fcollection != NULL){
-        Result result;
-
         if(mode & INTEGER){
-            if(readJson(settings.sizeLine, fcollection, criteria, INTEGER, &result) == -1) return strfree(-1, 1, &collectionPath);
+            if(readJson(settings->sizeLine, fcollection, criteria, INTEGER, &result) == -1){
+                fclose(fcollection);
+                return strfree(EPERM, 1, &collectionPath);
+            }
 
             if(mode & SORT){
                 quickSort(result._integer, 0, result._size - 1, mode, result._matches);
             }
 
             request->document = NEW(char *, result._size);
-            if(request->document == NULL) return strfree(-1, 1, &collectionPath);
+            if(request->document == NULL) return strfree(ENOMEM, 1, &collectionPath);
 
             for(index = 0; index < result._size; index++){
                 if((mode & DIFFERENT && result._integer[index] != *(long *)value)
@@ -459,14 +482,17 @@ int beesy_search_document(Settings settings, const char *collection, int mode, c
                 }
             }
         } else if(mode & REAL){
-            if(readJson(settings.sizeLine, fcollection, criteria, REAL, &result) == -1) return strfree(-1, 1, &collectionPath);
+            if(readJson(settings->sizeLine, fcollection, criteria, REAL, &result) == -1){
+                fclose(fcollection);
+                return strfree(EPERM, 1, &collectionPath);
+            }
 
             if(mode & SORT){
                 quickSort(result._real, 0, result._size - 1, mode, result._matches);
             }
 
             request->document = NEW(char *, result._size);
-            if(request->document == NULL) return strfree(-1, 1, &collectionPath);
+            if(request->document == NULL) return strfree(ENOMEM, 1, &collectionPath);
 
             for(index = 0; index < result._size; index++){
                 if((mode & DIFFERENT && result._real[index] != *(double *)value)
@@ -484,14 +510,17 @@ int beesy_search_document(Settings settings, const char *collection, int mode, c
                 }
             }
         } else if(mode & STRING){
-            if(readJson(settings.sizeLine, fcollection, criteria, STRING, &result) == -1) return strfree(-1, 1, &collectionPath);
+            if(readJson(settings->sizeLine, fcollection, criteria, STRING, &result) == -1){
+                fclose(fcollection);
+                return strfree(EPERM, 1, &collectionPath);
+            }
 
             if(mode & SORT){
                 quickSort(result._string, 0, result._size - 1, mode, result._matches);
             }
 
             request->document = NEW(char *, result._size);
-            if(request->document == NULL) return strfree(-1, 1, &collectionPath);
+            if(request->document == NULL) return strfree(ENOMEM, 1, &collectionPath);
 
             for(index = 0; index < result._size; index++){
                 if((mode & DIFFERENT && strcmp(result._string[index], *(char **)value))
@@ -503,7 +532,8 @@ int beesy_search_document(Settings settings, const char *collection, int mode, c
                 }
             }
         } else {
-            return strfree(-1, 1, &collectionPath);
+            fclose(fcollection);
+            return strfree(EINTR, 1, &collectionPath);
         }
 
         if(result._match != NULL) free(result._match);
@@ -520,13 +550,14 @@ int beesy_search_document(Settings settings, const char *collection, int mode, c
 
         fclose(fcollection);
     } else {
-        return strfree(-1, 1, &collectionPath);
+        printf("ERROR READING\n");
+        return strfree(EINTR, 1, &collectionPath);
     }
 
-    return strfree(1, 1, &collectionPath);
+    return strfree(0, 1, &collectionPath);
 }
 
-int beesy_drop_document(Settings settings, const char *collection, int mode, const char *criteria, void *value)
+int beesy_drop_document(Settings *settings, const char *collection, int mode, const char *criteria, void *value)
 {
     FILE *fcollection = NULL;
     FILE *fcopy = NULL;
@@ -537,19 +568,19 @@ int beesy_drop_document(Settings settings, const char *collection, int mode, con
     Request request;
     int index, limit = 0;
 
-    if(!settings.permission) return -1;
+    if(!settings->permission) return -1;
 
-    strconcat(&collectionPath, 3, settings.currentDatabase, "/~$", collection);
+    strconcat(&collectionPath, 3, settings->currentDatabase, "/~$", collection);
     fcollection = fopen(collectionPath, "r");
     if(fcollection != NULL){
         if(beesy_search_document(settings, collection, mode, criteria, value, &request) == -1) return -1;
 
-        strconcat(&copyPath, 3, settings.currentDatabase, "/_", collection);
+        strconcat(&copyPath, 3, settings->currentDatabase, "/_", collection);
         fcopy = fopen(copyPath, "w");
         if(fcopy != NULL){
-            content = NEW(char *, settings.sizeLine);
+            content = NEW(char *, settings->sizeLine);
             if(content == NULL) return strfree(-1, 2, &collectionPath, &copyPath);
-            while(fgets(content, settings.sizeLine, fcollection) != NULL){
+            while(fgets(content, settings->sizeLine, fcollection) != NULL){
                 temporaire = extend(strlen(content) - 1, content);
                 if(temporaire == NULL) return strfree(-1, 2, &collectionPath, &copyPath);
 
@@ -570,7 +601,7 @@ int beesy_drop_document(Settings settings, const char *collection, int mode, con
                 fprintf(fcopy, "%s\n", temporaire);
 
                 strfree(0, 2, &content, &temporaire);
-                content = NEW(char *, settings.sizeLine);
+                content = NEW(char *, settings->sizeLine);
                 if(content == NULL) return strfree(-1, 2, &collectionPath, &copyPath);
             }
 

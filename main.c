@@ -64,6 +64,13 @@ int main(int argc, char **argv)
         exit(-1);
     }
 
+    // initialization
+    if(settings.permission & UNINITIATED){
+        status = beesy_boot(&settings);
+        if(status)
+            return status;
+    }
+
     do {
         // initialization of the Terminal structure
         terminal.argc = 0;

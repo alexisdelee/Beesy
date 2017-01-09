@@ -37,7 +37,7 @@ long fsize(FILE *file)
 int prohibitedCharacters(const char *string)
 {
     // if(strchr(string, '_') != NULL) return EINVAL;
-    if(strchr(string, '.') != NULL) return EINVAL;
+    // if(strchr(string, '.') != NULL) return EINVAL;
     if(strstr(string, "~$") != NULL) return EINVAL;
 
     return 0;

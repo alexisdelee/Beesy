@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
+#include <math.h>
 
 #include "../h/strlib.h"
 #include "../h/shell.h"
@@ -71,64 +73,230 @@ int beesy_detect(Settings *settings, Terminal *terminal, char (*commands)[2][300
     else return 0;
 }
 
-int beesy_run(Settings *settings, Terminal *terminal, int id)
+int beesy_analyze_argv(Terminal *terminal, int param)
 {
     int status;
+    int index;
 
-    if(settings->permission & UNINITIATED){
-        status = beesy_boot(settings);
-        if(status){
+    if(param > 1 && terminal->argc < param) return EAGAIN;
+    if(terminal->argc > param) return E2BIG;
+
+    for(index = 1; index < param; index++){
+        status = check(64, 1, &terminal->argv[index]);
+        if(status)
             return status;
-        } else if(id == 9){
-            printf("logged in as domain administrator...\n");
+    }
+
+    return 0;
+}
+
+int beesy_analyze_symbol(int type, const char *symbol)
+{
+    int mode = 0;
+    int size = strlen(symbol);
+
+    if(size > 2)
+        return 0;
+
+    if(symbol[0] == '!'){
+        mode |= DIFFERENT;
+    } else if(symbol[0] == '='){
+        mode |= EQUAL;
+    } else if((type & INTEGER || type & REAL) && (symbol[0] == '<')){
+        mode |= LOWER;
+    } else if((type & INTEGER || type & REAL) && (symbol[0] == '>')){
+        mode |= UPPER;
+    } else if((type & STRING) && (symbol[0] == '|')){
+        mode |= INCLUDE;
+    } else {
+        return 0;
+    }
+
+    if(size == 2){
+        if((type & INTEGER || type & REAL) && (symbol[1] == '=') && (mode & LOWER || mode & UPPER)){
+            mode |= EQUAL;
+        } else {
             return 0;
         }
     }
 
+    if(mode == 0) return 0;
+    return mode | type;
+}
+
+int beesy_run_search(Settings *settings, Terminal *terminal)
+{
+    Request request;
+    char *endptr = NULL;
+    long valueInteger;
+    double valueReal;
+    int mode;
+    int index;
+    int status;
+
+    if(!strcmp("--integer", terminal->argv[1])
+       || !strcmp("-i", terminal->argv[1])){
+        valueInteger = strtol(terminal->argv[5], &endptr, 10);
+
+        if((errno == ERANGE && (valueInteger == LONG_MAX || valueInteger == LONG_MIN))
+           || (errno != 0 && valueInteger == 0)
+           || (endptr == terminal->argv[5])){
+            return EINTR;
+        }
+
+        mode = beesy_analyze_symbol(INTEGER, terminal->argv[4]);
+        if(!mode) return EINVAL;
+
+        status = beesy_search_document(settings, terminal->argv[2], mode, terminal->argv[3], &valueInteger, &request);
+    } else if(!strcmp("--real", terminal->argv[1])
+              || !strcmp("-r", terminal->argv[1])){
+        valueReal = strtod(terminal->argv[5], &endptr);
+
+        if((errno == ERANGE && (valueReal == HUGE_VAL || valueReal == -HUGE_VAL))
+           || (errno != 0 && valueReal == 0)
+           || (endptr == terminal->argv[5])){
+            return EINTR;
+        }
+
+        mode = beesy_analyze_symbol(REAL, terminal->argv[4]);
+        if(!mode) return EINVAL;
+
+        status = beesy_search_document(settings, terminal->argv[2], mode, terminal->argv[3], &valueReal, &request);
+    } else if(!strcmp("--string", terminal->argv[1])
+              || !strcmp("-s", terminal->argv[1])){
+        mode = beesy_analyze_symbol(STRING, terminal->argv[4]);
+        if(!mode) return EINVAL;
+
+        status = beesy_search_document(settings, terminal->argv[2], mode, terminal->argv[3], &terminal->argv[5], &request);
+    } else {
+        return EINVAL;
+    }
+
+    if(status)
+        return status;
+
+    for(index = 0; index < request.length; index++){
+        printf("%s\n", request.document[index]);
+        strfree(0, 1, &request.document[index]);
+    }
+    if(request.document != NULL) free(request.document);
+
+    return 0;
+}
+
+int beesy_run_drop(Settings *settings, Terminal *terminal)
+{
+    char *command = NULL;
+    int status;
+
+    if(!strcmp("--collection", terminal->argv[1])
+       || !strcmp("-c", terminal->argv[1])){
+        status = beesy_analyze_argv(terminal, 3);
+        if(status)
+            return status;
+
+        status = beesy_drop_collection(settings, terminal->argv[2]);
+        if(status)
+            return status;
+
+        printf("deleting the collection \"%s\"...\n", terminal->argv[2]);
+    } else if(!strcmp("--database", terminal->argv[1])
+              || !strcmp("-db", terminal->argv[1])){
+        status = beesy_analyze_argv(terminal, 4);
+        if(status)
+            return status;
+
+        status = beesy_connect_database(settings, terminal->argv[2], terminal->argv[3]);
+        if(status)
+            return status;
+
+        settings->permission ^= ADVANCED;
+        settings->permission |= WAIT;
+
+        status = strconcat(&command, 5, "rd \"", settings->baseDir, "current/", terminal->argv[2], "\" /s /q > nul");
+        if(status)
+            return status;
+
+        system(command);
+        strfree(0, 1, &command);
+
+        printf("deleting the database \"%s\"...\n", terminal->argv[2]);
+    } else {
+        return EINVAL;
+    }
+
+    return 0;
+}
+
+void beesy_run_exit(Settings *settings)
+{
+    if(settings->permission & ROOT){
+        settings->permission ^= ROOT; // reset root mode without altering other permissions
+        printf("logged in as user...\n");
+    } else {
+        exit(1);
+    }
+}
+
+int beesy_security_mode(Settings *settings)
+{
+    int status;
+
+    if(settings->permission & SECURITY){
+        settings->permission |= ROOT;
+        status = beesy_commit(settings);
+        settings->permission ^= ROOT;
+        if(status)
+            return status;
+    }
+
+    return 0;
+}
+
+int beesy_run(Settings *settings, Terminal *terminal, int id)
+{
+    int status;
+
     switch(id){
         case 1:
-            if(terminal->argc < 3) return EAGAIN;
-            if(terminal->argc > 3) return E2BIG;
-
-            status = check(64, 2, &terminal->argv[1], &terminal->argv[2]);
+            status = beesy_analyze_argv(terminal, 3);
             if(status)
                 return status;
 
             status = beesy_connect_database(settings, terminal->argv[1], terminal->argv[2]);
-            if(status){
+            if(status)
                 return status;
-            }
 
             printf("connect to the database \"%s\"...\n", terminal->argv[1]);
             sprintf(terminal->header, "%s", terminal->argv[1]);
 
             break;
-        case 4:
-            if(terminal->argc < 2) return EAGAIN;
-
-            status = check(64, 1, &terminal->argv[1]);
+        case 2:
+            status = beesy_analyze_argv(terminal, 6);
             if(status)
                 return status;
 
-            if(!strcmp("--collection", terminal->argv[1])
-               || !strcmp("-c", terminal->argv[1])){
+            status = beesy_run_search(settings, terminal);
+            if(status)
+                return status;
 
-                if(terminal->argc < 3) return EAGAIN;
-                if(terminal->argc > 3) return E2BIG;
+            status = beesy_security_mode(settings);
+            if(status)
+                return status;
 
-                status = check(64, 1, &terminal->argv[2]);
-                if(status)
-                    return status;
+            break;
+        case 4:
+            if(terminal->argc < 2) return EAGAIN;
 
-                status = beesy_drop_collection(settings, terminal->argv[2]);
-                if(status)
-                    return status;
+            status = beesy_run_drop(settings, terminal);
+            if(status)
+                return status;
 
-                printf("deleting the collection \"%s\"...\n", terminal->argv[2]);
-                break;
-            } else {
-                return EPERM;
-            }
+            status = beesy_security_mode(settings);
+            if(status)
+                return status;
+
+            break;
         case 5:
             if(terminal->argc > 1) return E2BIG;
 
@@ -149,8 +317,9 @@ int beesy_run(Settings *settings, Terminal *terminal, int id)
 
             break;
         case 7:
-            if(terminal->argc < 2) return EAGAIN;
-            if(terminal->argc > 2) return E2BIG;
+            status = beesy_analyze_argv(terminal, 2);
+            if(status)
+                return status;
 
             status = beesy_rollback(settings, terminal->argv[1]);
             if(status)
@@ -166,12 +335,7 @@ int beesy_run(Settings *settings, Terminal *terminal, int id)
 
             break;
         case 9:
-            if(terminal->argc < 2) return EAGAIN;
-            if(terminal->argc > 2) return E2BIG;
-
-            if(settings->permission & ROOT) return EPERM;
-
-            status = check(64, 1, &terminal->argv[1]);
+            status = beesy_analyze_argv(terminal, 2);
             if(status)
                 return status;
 
@@ -180,18 +344,11 @@ int beesy_run(Settings *settings, Terminal *terminal, int id)
                 return status;
 
             printf("logged in as domain administrator...\n");
-
             break;
         case 10:
             if(terminal->argc > 1) return E2BIG;
 
-            if(settings->permission & ROOT){
-                settings->permission ^= ROOT; // reset root mode without altering other permissions
-                printf("logged in as user...\n");
-            } else {
-                exit(1);
-            }
-
+            beesy_run_exit(settings);
             break;
     }
 
@@ -203,7 +360,7 @@ int beesy_analyze(Settings *settings, Terminal *terminal)
     char commands[11][2][300] = {
         {"help", "\t\thelp on database methods"},
         {"connect", "[path] [password]\n\t\tconnexion to the database"},
-        {"search", "\t\tsearch for documents in collection"},
+        {"search", "[option] [path] [keyword] [symbol] [value] [Options: -i, --integer, -r, --real, -s, --string]\n\t\tsearch for documents in collection"},
         {"insert", "\t\tinsert/update documents in collection"},
         {"drop", "[option] [path] [password] [Options: -db, --database, -c, --collection, -doc, --document]\n\t\tdelete document/collection/database"},
         {"disconnect", "\tclose current database"},
