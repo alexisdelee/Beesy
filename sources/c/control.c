@@ -57,10 +57,7 @@ int beesy_settings(Settings *settings)
 
     printf("\n");
 
-    // test
     settings->permission |= UNINITIATED;
-    // test
-
     return 0;
 }
 
@@ -318,7 +315,7 @@ int initPasswd(Settings *settings, const char *database)
     sha1(fileHash, database);
     sha1(rootHash, content);
 
-    for(index = 0; index < 41; index++){
+    for(index = 0; index < 40; index++){
         hash[index] = (fileHash[index] ^ rootHash[index]) ^ settings->passdbHash[index];
     }
 
@@ -378,7 +375,7 @@ int idPasswd(Settings *settings, const char *database)
     sha1(rootHash, content);
     sha1(dbHash, database);
 
-    for(index = 0; index < 41; index++)
+    for(index = 0; index < 40; index++)
         hash[index] = (fileHash[index] ^ settings->passdbHash[index]) ^ rootHash[index];
 
     if(!strcmp(hash, dbHash))
@@ -550,7 +547,6 @@ int beesy_search_document(Settings *settings, const char *collection, int mode, 
 
         fclose(fcollection);
     } else {
-        printf("ERROR READING\n");
         return strfree(EINTR, 1, &collectionPath);
     }
 
@@ -559,30 +555,37 @@ int beesy_search_document(Settings *settings, const char *collection, int mode, 
 
 int beesy_drop_document(Settings *settings, const char *collection, int mode, const char *criteria, void *value)
 {
+    Request request;
     FILE *fcollection = NULL;
     FILE *fcopy = NULL;
     char *collectionPath = NULL;
     char *copyPath = NULL;
     char *temporaire = NULL;
     char *content = NULL;
-    Request request;
-    int index, limit = 0;
+    int index;
+    int limit = 0;
+    int status;
 
-    if(!settings->permission) return -1;
+    if(!(settings->permission & ADVANCED)) return EACCES;
 
     strconcat(&collectionPath, 3, settings->currentDatabase, "/~$", collection);
     fcollection = fopen(collectionPath, "r");
     if(fcollection != NULL){
-        if(beesy_search_document(settings, collection, mode, criteria, value, &request) == -1) return -1;
+        status = beesy_search_document(settings, collection, mode, criteria, value, &request);
+        if(status)
+            return status;
 
-        strconcat(&copyPath, 3, settings->currentDatabase, "/_", collection);
+        status = strconcat(&copyPath, 3, settings->currentDatabase, "/_", collection);
+        if(status)
+            return status;
+
         fcopy = fopen(copyPath, "w");
         if(fcopy != NULL){
             content = NEW(char *, settings->sizeLine);
-            if(content == NULL) return strfree(-1, 2, &collectionPath, &copyPath);
+            if(content == NULL) return strfree(ENOMEM, 2, &collectionPath, &copyPath);
             while(fgets(content, settings->sizeLine, fcollection) != NULL){
                 temporaire = extend(strlen(content) - 1, content);
-                if(temporaire == NULL) return strfree(-1, 2, &collectionPath, &copyPath);
+                if(temporaire == NULL) return strfree(ENOMEM, 2, &collectionPath, &copyPath);
 
                 for(index = 0; index < request.length; index++){
                     if(strstr(temporaire, request.document[index]) != NULL){
@@ -602,13 +605,13 @@ int beesy_drop_document(Settings *settings, const char *collection, int mode, co
 
                 strfree(0, 2, &content, &temporaire);
                 content = NEW(char *, settings->sizeLine);
-                if(content == NULL) return strfree(-1, 2, &collectionPath, &copyPath);
+                if(content == NULL) return strfree(ENOMEM, 2, &collectionPath, &copyPath);
             }
 
             fclose(fcopy);
         } else {
             fclose(fcollection);
-            return strfree(-1, 2, &collectionPath, &copyPath);
+            return strfree(EINTR, 2, &collectionPath, &copyPath);
         }
 
         fclose(fcollection);
@@ -616,14 +619,14 @@ int beesy_drop_document(Settings *settings, const char *collection, int mode, co
         remove(collectionPath);
         rename(copyPath, collectionPath);
     } else {
-        return strfree(-1, 3, &collectionPath, &copyPath, &content);
+        return strfree(EINTR, 3, &collectionPath, &copyPath, &content);
     }
 
     for(index = 0; index < request.length; index++)
         if(request.document[index] != NULL) free(request.document[index]);
     if(request.document != NULL) free(request.document);
 
-    return strfree(1, 2, &collectionPath, &copyPath);
+    return strfree(0, 2, &collectionPath, &copyPath);
 }
 
 int beesy_drop_collection(Settings *settings, const char *collection)

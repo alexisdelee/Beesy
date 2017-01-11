@@ -124,64 +124,83 @@ int beesy_analyze_symbol(int type, const char *symbol)
     return mode | type;
 }
 
-int beesy_run_search(Settings *settings, Terminal *terminal)
+int beesy_run_search_options(int option, Settings *settings, const char *collection, int mode, const char *criteria, void *value, Request *request)
+{
+    int status;
+    int index;
+
+    if(!option){
+        status = beesy_drop_document(settings, collection, mode, criteria, value);
+        if(status)
+            return status;
+    } else {
+        status = beesy_search_document(settings, collection, mode, criteria, value, request);
+        if(status)
+            return status;
+
+        if(option){
+            for(index = 0; index < request->length; index++){
+                printf("%s\n", request->document[index]);
+                strfree(0, 1, &request->document[index]);
+            }
+            if(request->document != NULL) free(request->document);
+        }
+    }
+
+    return 0;
+}
+
+int beesy_run_search(int option, Settings *settings, Terminal *terminal, const char *collection, const char *type, const char *criteria, const char *symbol, const char *value)
 {
     Request request;
     char *endptr = NULL;
     long valueInteger;
     double valueReal;
     int mode;
-    int index;
     int status;
 
-    if(!strcmp("--integer", terminal->argv[1])
-       || !strcmp("-i", terminal->argv[1])){
-        valueInteger = strtol(terminal->argv[5], &endptr, 10);
+    if(!strcmp("--integer", type)
+       || !strcmp("-i", type)){
+        valueInteger = strtol(value, &endptr, 10);
 
         if((errno == ERANGE && (valueInteger == LONG_MAX || valueInteger == LONG_MIN))
            || (errno != 0 && valueInteger == 0)
-           || (endptr == terminal->argv[5])){
+           || (endptr == value)){
             return EINTR;
         }
 
-        mode = beesy_analyze_symbol(INTEGER, terminal->argv[4]);
+        mode = beesy_analyze_symbol(INTEGER, symbol);
         if(!mode) return EINVAL;
-
-        status = beesy_search_document(settings, terminal->argv[2], mode, terminal->argv[3], &valueInteger, &request);
-    } else if(!strcmp("--real", terminal->argv[1])
-              || !strcmp("-r", terminal->argv[1])){
-        valueReal = strtod(terminal->argv[5], &endptr);
+    } else if(!strcmp("--real", type)
+              || !strcmp("-r", type)){
+        valueReal = strtod(value, &endptr);
 
         if((errno == ERANGE && (valueReal == HUGE_VAL || valueReal == -HUGE_VAL))
            || (errno != 0 && valueReal == 0)
-           || (endptr == terminal->argv[5])){
+           || (endptr == value)){
             return EINTR;
         }
 
-        mode = beesy_analyze_symbol(REAL, terminal->argv[4]);
+        mode = beesy_analyze_symbol(REAL, symbol);
         if(!mode) return EINVAL;
-
-        status = beesy_search_document(settings, terminal->argv[2], mode, terminal->argv[3], &valueReal, &request);
-    } else if(!strcmp("--string", terminal->argv[1])
-              || !strcmp("-s", terminal->argv[1])){
-        mode = beesy_analyze_symbol(STRING, terminal->argv[4]);
+    } else if(!strcmp("--string", type)
+              || !strcmp("-s", type)){
+        mode = beesy_analyze_symbol(STRING, symbol);
         if(!mode) return EINVAL;
-
-        status = beesy_search_document(settings, terminal->argv[2], mode, terminal->argv[3], &terminal->argv[5], &request);
     } else {
         return EINVAL;
     }
 
-    if(status)
-        return status;
-
-    for(index = 0; index < request.length; index++){
-        printf("%s\n", request.document[index]);
-        strfree(0, 1, &request.document[index]);
+    if(mode & INTEGER){
+        status = beesy_run_search_options(option, settings, collection, mode, criteria, &valueInteger, &request);
+    } else if(mode & REAL){
+        status = beesy_run_search_options(option, settings, collection, mode, criteria, &valueReal, &request);
+    } else if(mode & STRING) {
+        status = beesy_run_search_options(option, settings, collection, mode, criteria, &value, &request);
     }
-    if(request.document != NULL) free(request.document);
 
-    return 0;
+    if(status) return status;
+    else return 0;
 }
 
 int beesy_run_drop(Settings *settings, Terminal *terminal)
@@ -189,18 +208,7 @@ int beesy_run_drop(Settings *settings, Terminal *terminal)
     char *command = NULL;
     int status;
 
-    if(!strcmp("--collection", terminal->argv[1])
-       || !strcmp("-c", terminal->argv[1])){
-        status = beesy_analyze_argv(terminal, 3);
-        if(status)
-            return status;
-
-        status = beesy_drop_collection(settings, terminal->argv[2]);
-        if(status)
-            return status;
-
-        printf("deleting the collection \"%s\"...\n", terminal->argv[2]);
-    } else if(!strcmp("--database", terminal->argv[1])
+    if(!strcmp("--database", terminal->argv[1])
               || !strcmp("-db", terminal->argv[1])){
         status = beesy_analyze_argv(terminal, 4);
         if(status)
@@ -221,9 +229,33 @@ int beesy_run_drop(Settings *settings, Terminal *terminal)
         strfree(0, 1, &command);
 
         printf("deleting the database \"%s\"...\n", terminal->argv[2]);
+    } else if(!strcmp("--collection", terminal->argv[1])
+              || !strcmp("-c", terminal->argv[1])){
+        status = beesy_analyze_argv(terminal, 3);
+        if(status)
+            return status;
+
+        status = beesy_drop_collection(settings, terminal->argv[2]);
+        if(status)
+            return status;
+
+        printf("deleting the collection \"%s\"...\n", terminal->argv[2]);
+    } else if(!strcmp("--document", terminal->argv[1])
+              || !strcmp("-doc", terminal->argv[1])){
+        status = beesy_analyze_argv(terminal, 7);
+        if(status)
+            return status;
+
+        status = beesy_run_search(0, settings, terminal, terminal->argv[3], terminal->argv[2], terminal->argv[4], terminal->argv[5], terminal->argv[6]);
+        if(status)
+            return status;
     } else {
         return EINVAL;
     }
+
+    status = beesy_security_mode(settings);
+    if(status)
+        return status;
 
     return 0;
 }
@@ -276,11 +308,7 @@ int beesy_run(Settings *settings, Terminal *terminal, int id)
             if(status)
                 return status;
 
-            status = beesy_run_search(settings, terminal);
-            if(status)
-                return status;
-
-            status = beesy_security_mode(settings);
+            status = beesy_run_search(1, settings, terminal, terminal->argv[2], terminal->argv[1], terminal->argv[3], terminal->argv[4], terminal->argv[5]);
             if(status)
                 return status;
 

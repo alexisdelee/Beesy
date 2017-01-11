@@ -18,7 +18,6 @@
 #define INTEGER     0x001
 #define REAL        0x002
 #define STRING      0x004
-#define ARRAY       0x008
 
 #define EQUAL       0x010
 #define DIFFERENT   0x020
