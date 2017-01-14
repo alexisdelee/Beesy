@@ -12,6 +12,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <math.h>
 
 #include "../h/strlib.h"
 #include "../h/interne.h"

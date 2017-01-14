@@ -6,6 +6,7 @@
 #include "sources/h/strlib.h"
 #include "sources/h/shell.h"
 #include "sources/h/control.h"
+#include "sources/h/interne.h"
 
 int main(int argc, char **argv)
 {
@@ -42,12 +43,14 @@ int main(int argc, char **argv)
         exit(-1);
     } */
 
-    /* <shell> */
     char command[300] = "";
     int status;
     int index;
     Settings settings;
     Terminal terminal;
+    Stack stack;
+
+    stack.size = 0; // initialize the stack at 0
 
     printf("Beesy shell version: 1.0.0\
            \nWelcome to the Beesy shell.\
@@ -59,17 +62,13 @@ int main(int argc, char **argv)
         exit(-1);
     }
 
-    if(str(&terminal.header, "")){
+    terminal.header = extend(1, "");
+    if(terminal.header == NULL){
         beesy_error(ENOMEM);
         exit(-1);
     }
 
-    // initialization
-    /* if(settings.permission & UNINITIATED){
-        status = beesy_boot(&settings);
-        if(status)
-            return status;
-    } */
+    // start the creation of the files / folders necessary for the application
     status = beesy_boot(&settings);
     if(status)
         return status;
@@ -94,7 +93,7 @@ int main(int argc, char **argv)
         }
 
         // analysis of the input variable
-        status = beesy_analyze(&settings, &terminal);
+        status = beesy_analyze(&settings, &terminal, &stack);
         if(status)
             beesy_error(status);
 
@@ -103,7 +102,6 @@ int main(int argc, char **argv)
             strfree(0, 1, &terminal.argv[index]);
         if(terminal.argv == NULL) free(terminal.argv);
     } while(1);
-    /* </shell> */
 
     return strfree(0, 1, &terminal.header);
 }

@@ -12,15 +12,6 @@
 #include "../../ext/jsmn/include/jsmn.h"
 #include "control.h"
 
-typedef struct {
-    char *_match;
-    char **_matches;
-    int _size;
-    long *_integer;
-    double *_real;
-    char **_string;
-} Result;
-
 /*
 ** Description: return the size of a file
 **
@@ -83,7 +74,7 @@ int jsoneq(const char *, jsmntok_t *tok, const char *);
 /*
 ** Description: management of the reading of a JSON file
 **
-** Syntax: readJson(long, source, strA, intB, structA)
+** Syntax: readJson(intA, source, strA, intB, structA)
 ** <intA> max size by line to read
 ** <source> link to the collection file
 ** <strA> search criterion
@@ -91,6 +82,8 @@ int jsoneq(const char *, jsmntok_t *tok, const char *);
 ** <structA> structure of type Result containing the results
 */
 int readJson(long, FILE *, const char *, int, Result *);
+
+int writeJson(char **, const char *, const char *, int, int, int);
 
 /*
 ** Description: multiple quick sort function
@@ -103,5 +96,9 @@ int readJson(long, FILE *, const char *, int, Result *);
 ** <arr::strA> string containing the results to sort
 */
 void quickSort(void *, int, int, int, char **);
+
+void replaceCopy(const char *, const char *);
+int createCopy(Settings *, const char *, const char *, Request);
+int bsd(const char *seed, int);
 
 #endif // INTERNE_H_INCLUDED

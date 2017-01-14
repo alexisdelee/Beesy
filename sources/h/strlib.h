@@ -12,18 +12,18 @@
 /*
 ** Description: dynamically assigning a string to a character pointer
 **
-** Syntax: strpos(str, string)
-** <str> original string
-** <string> string to transfer
+** Syntax: strpos(strA, strB)
+** <strA> original string
+** <strB> string to transfer
 */
 int str(char **, const char *);
 
 /*
 ** Description: dynamically string concatenation to a character pointer
 **
-** Syntax: strconcat(str, indexA, ...)
-** <str> original string
-** <indexA> number of arguments after this parameter
+** Syntax: strconcat(strA, intA, ...)
+** <strA> original string
+** <intA> number of arguments after this parameter
 ** <...> string to concatenate
 */
 int strconcat(char **, int, ...);
@@ -31,15 +31,14 @@ int strconcat(char **, int, ...);
 /*
 ** Description: dynamically free character pointers
 **
-** Syntax: strfree(indexA, indexB, ...)
-** <indexA> value to return
-** <indexB> number of arguments after this parameter
+** Syntax: strfree(intA, intB, ...)
+** <intA> value to return
+** <intB> number of arguments after this parameter
 ** <...> string to free
 */
 int strfree(int, int, ...);
 
 char *strtrim(char *);
-
 int strsplit(char *, const char *, int *, char ***);
 
 #endif // STRLIB_H_INCLUDED
