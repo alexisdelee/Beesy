@@ -38,7 +38,20 @@ int strconcat(char **, int, ...);
 */
 int strfree(int, int, ...);
 
+/*
+** Description: removing space and end-of-line characters at the beginning and end of the string
+*/
 char *strtrim(char *);
+
+/*
+** Description: separation of sub-chains from each delimiter
+**
+** Syntax: strsplit(strA, strB, ptr::int, ptr::arr::str)
+** <strA> string to analyze
+** <strB> delimiter
+** <ptr::int> size of the sub-chain
+** <ptr::arr:str> array of sub-chains
+*/
 int strsplit(char *, const char *, int *, char ***);
 
 #endif // STRLIB_H_INCLUDED

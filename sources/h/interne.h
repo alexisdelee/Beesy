@@ -20,10 +20,28 @@
 */
 long fsize(FILE *);
 
+/*
+** Description: check if a string doesn't contain a forbidden character
+**
+** Syntax: prohibitedCharacters(strA)
+** <strA>: string to analyze
+*/
 int prohibitedCharacters(const char *);
+
+/*
+** Description: check if a string doesn't exceed n characters and start the function prohibitedCharacters()
+**
+** Syntax: check(intA, intB, ...)
+** <intA> maximum size
+** <intB> number of arguments after this parameter
+** <...> string to analyze
+*/
 int check(int, int, ...);
+
+/*
+** Description: options recognized by beesy
+*/
 int parseString(Settings *, char *);
-int parseNumber(Settings *, char *);
 
 /*
 ** Description: get a hash of a string from the hash algorithm sha1
@@ -64,6 +82,9 @@ int confidential(const char *, const char *, short);
 */
 char *extend(int, const char *);
 
+/*
+** Description: invert two values of the same type
+*/
 int _swap(int, void *, void *);
 
 /*
@@ -83,6 +104,17 @@ int jsoneq(const char *, jsmntok_t *tok, const char *);
 */
 int readJson(long, FILE *, const char *, int, Result *);
 
+/*
+** Description: management of the writing of a JSON file
+**
+** Syntax: writeJson(ptr::str, strA, strB, intA, intB, intC)
+** <ptr::str> where to store the JSON string
+** <strA> key to insert
+** <strB> value to insert
+** <intA> type of the key
+** <intB> current position
+** <intC> number of elements to insert
+*/
 int writeJson(char **, const char *, const char *, int, int, int);
 
 /*
@@ -97,8 +129,33 @@ int writeJson(char **, const char *, const char *, int, int, int);
 */
 void quickSort(void *, int, int, int, char **);
 
+/*
+** Description: delete the original file and rename the new file with the old name
+**
+** Syntax: replaceCopy(strA, strB)
+** <strA> old path
+** <strB> new path
+*/
 void replaceCopy(const char *, const char *);
+
+/*
+** Description: create a copy by deleting documents related to the search
+**
+** Syntax: createCopy(structA, strA, strB, structB)
+** <structA> configuration options
+** <strA> old path
+** <strB> new path
+** <structB> structure containing the documents to be deleted
+*/
 int createCopy(Settings *, const char *, const char *, Request);
+
+/*
+** Description: BSD checksum (used to generate a unique ID for each document)
+**
+** Syntax: bsd(strA, intA)
+** <strA> string to hash
+** <intA> size of the string
+*/
 int bsd(const char *seed, int);
 
 #endif // INTERNE_H_INCLUDED

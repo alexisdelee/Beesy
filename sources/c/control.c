@@ -31,7 +31,6 @@ int beesy_settings(Settings *settings)
     int status;
 
     settings->permission = 0;
-    settings->sizeLine = 1000; // by default
 
     fconfiguration = fopen("beesy.inc", "r");
     if(fconfiguration != NULL){
@@ -39,10 +38,8 @@ int beesy_settings(Settings *settings)
             if(content[0] == '#'){
                 continue;
             } else if(strstr(content, "basedir") != NULL
-               || strstr(content, "security") != NULL){
+               || strstr(content, "security") != NULL){ // only the "basedir" and "security" options can be modified
                 status = parseString(settings, content);
-            } else if(strstr(content, "size_line") != NULL){
-                status = parseNumber(settings, content);
             } else {
                 continue;
             }
@@ -102,7 +99,7 @@ int beesy_init_root(Settings *settings)
     int status;
 
     printf("first connection, set root password: ");
-    fgets(password, 65, stdin);
+    fgets(password, 65, stdin); // enter the root password for the first time
 
     strim = strtrim(password);
 
@@ -120,7 +117,7 @@ int beesy_init_root(Settings *settings)
         exit(-1);
     }
 
-    settings->permission |= ROOT;
+    settings->permission |= ROOT; // we attribute it the "root"
     return strfree(0, 1, &accessPath);
 }
 
@@ -135,7 +132,7 @@ int configurationOfMarker(Settings *settings)
             return EINTR;
         }
     } else {
-        settings->permission |= WAIT;
+        settings->permission |= WAIT; // if the file exists, it gets good permission
     }
 
     fclose(fconfiguration);
@@ -183,7 +180,7 @@ int beesy_boot(Settings *settings)
     else
         return strfree(EINTR, 2, &databasePath, &frefsPath);
 
-    settings->permission ^= UNINITIATED;
+    settings->permission ^= UNINITIATED; // delete this flag
     settings->permission |= WAIT;
 
     printf("logged in as domain administrator...\n");
@@ -204,7 +201,7 @@ int beesy_commit(Settings *settings)
     if(!(settings->permission & ROOT)) return EACCES;
 
     sprintf(seed, "%ld", time(NULL));
-    sha1(uniqID, seed);
+    sha1(uniqID, seed); // backups are generated from the time hash
 
     status = strconcat(&databasePath, 3, settings->baseDir, "tags/", uniqID);
     if(status)
@@ -317,7 +314,7 @@ int initPasswd(Settings *settings, const char *database)
     sha1(rootHash, content);
 
     for(index = 0; index < 40; index++){
-        hash[index] = (fileHash[index] ^ rootHash[index]) ^ settings->passdbHash[index];
+        hash[index] = (fileHash[index] ^ rootHash[index]) ^ settings->passdbHash[index]; // (name of the database) xor (hash of content in root) xor (password)
     }
 
     status = strconcat(&path, 4, settings->baseDir, "current/", database, "/passwd");
@@ -377,9 +374,9 @@ int idPasswd(Settings *settings, const char *database)
     sha1(dbHash, database);
 
     for(index = 0; index < 40; index++)
-        hash[index] = (fileHash[index] ^ settings->passdbHash[index]) ^ rootHash[index];
+        hash[index] = (fileHash[index] ^ settings->passdbHash[index]) ^ rootHash[index]; // operation identical to the creation
 
-    if(!strcmp(hash, dbHash))
+    if(!strcmp(hash, dbHash)) // if the hash obtained is identical to the hash of the name of the database, then the password is valid
         return strfree(0, 1, &path);
     else
         return strfree(EACCES, 1, &path);
@@ -400,7 +397,7 @@ int beesy_connect_database(Settings *settings, const char *database, const char 
         return status;
 
     if(!_mkdir(databasePath)){
-        status = initPasswd(settings, database);
+        status = initPasswd(settings, database); // initialization of the password when creating the database
         if(status)
             return status;
 
@@ -496,7 +493,7 @@ int beesy_search_document(Settings *settings, const char *collection, int mode, 
     int status;
 
     request->length = 0;
-    if(!(settings->permission & ADVANCED)) return EACCES;
+    if(!(settings->permission & (ADVANCED|STAGE))) return EACCES;
 
     status = strconcat(&collectionPath, 3, settings->currentDatabase, "/~$", collection);
     if(status)
@@ -504,7 +501,7 @@ int beesy_search_document(Settings *settings, const char *collection, int mode, 
 
     fcollection = fopen(collectionPath, "r");
     if(fcollection != NULL){
-        if(readJson(settings->sizeLine, fcollection, criteria, mode & (INTEGER|REAL|STRING), &result) == -1){
+        if(readJson(6632, fcollection, criteria, mode & (INTEGER|REAL|STRING), &result)){
             fclose(fcollection);
             return strfree(EPERM, 1, &collectionPath);
         }
@@ -562,7 +559,7 @@ int beesy_drop_document(Settings *settings, const char *collection, int mode, co
     int index;
     int status;
 
-    if(!(settings->permission & ADVANCED)) return EACCES;
+    if(!(settings->permission & (ADVANCED|STAGE))) return EACCES;
 
     status = strconcat(&collectionPath, 3, settings->currentDatabase, "/~$", collection);
     if(status)
@@ -592,7 +589,7 @@ int beesy_drop_collection(Settings *settings, const char *collection)
     char *collectionPath = NULL;
     int status;
 
-    if(!(settings->permission & ADVANCED)) return EACCES;
+    if(!(settings->permission & (ADVANCED|STAGE))) return EACCES;
     if(!strcmp("passwd", collection)) return EACCES;
 
     status = strconcat(&collectionPath, 3, settings->currentDatabase, "/", collection);
@@ -621,6 +618,8 @@ int beesy_drop_database(Settings *settings, const char *collection, const char *
 {
     char *command = NULL;
     int status;
+
+    if(!(settings->permission & WAIT)) return EACCES;
 
     status = beesy_connect_database(settings, collection, password);
     if(status)

@@ -52,6 +52,7 @@ int check(int size, int limiter, ...)
     int error = 0;
 
     va_start(args, limiter);
+
     for( ; counter < limiter; counter++){
         path = va_arg(args, char **);
 
@@ -102,42 +103,6 @@ int parseString(Settings *settings, char *string)
     return 0;
 }
 
-int parseNumber(Settings *settings, char *string)
-{
-    char *strim = NULL;
-    char *options = NULL;
-    char *endptr = NULL;
-    int status;
-    int index;
-    long result;
-
-    strim = strtrim(string);
-
-    status = check(72, 1, &strim);
-    if(status)
-        return status;
-
-    if((index = strcspn(strim, "=")) == strlen(strim))
-        return EINTR;
-
-    options = strim + index + 1;
-    result = strtol(options, &endptr, 10);
-
-    if((errno == ERANGE && result == LONG_MAX)
-       || (result <= 0)
-       || (errno != 0 && result == 0)
-       || (endptr == options)){
-        return EINTR;
-    }
-
-    if(strstr(strim, "size_line") != NULL){
-        settings->sizeLine = result;
-        printf("[OK] %s\n", strim);
-    }
-
-    return 0;
-}
-
 void sha1(char *hash, const char *password)
 {
     SHA1Context sha;
@@ -166,7 +131,9 @@ int _xor(const char *password, const char *raw, const char *encrypted, short mod
 {
     FILE *source = NULL;
     FILE *target = NULL;
-    int pos = 0, c;
+    int pos = 0;
+    int c;
+    int size = strlen(password);
 
     source = fopen(raw, "rb");
     if(source != NULL){
@@ -175,15 +142,15 @@ int _xor(const char *password, const char *raw, const char *encrypted, short mod
             while((c = fgetc(source)) != EOF){
                 if(mode == 0){
                     c ^= password[pos];
-                    // c = ~c;
+                    c = ~c;
                 } else {
-                    // c = ~c;
+                    c = ~c;
                     c ^= password[pos];
                 }
 
                 fprintf(target, "%c", c);
 
-                if(pos != strlen(password)) pos++;
+                if(pos != size) pos++;
                 else pos = 0;
             }
 
@@ -312,6 +279,72 @@ int jsoneq(const char *json, jsmntok_t *tok, const char *s)
     }
 }
 
+int jsonType(Result *result, int mode, int cursor, int *maxSize)
+{
+    int i;
+    char *endptr = NULL;
+
+    if(mode & INTEGER){
+        if(!cursor){
+            result->_integer = NEW(long, 1);
+            if(result->_integer == NULL) return ENOMEM;
+            result->_integer[cursor] = strtol(result->_match, &endptr, 10);
+        } else {
+            result->_integer = realloc(result->_integer, sizeof(long) * (cursor + 1));
+            if(result->_integer == NULL) return ENOMEM;
+            result->_integer[cursor] = strtol(result->_match, &endptr, 10);
+        }
+
+        if((errno == ERANGE && (result->_integer[cursor] == LONG_MAX || result->_integer[cursor] == LONG_MIN))
+           || (errno != 0 && result->_integer[cursor] == 0)
+           || (endptr == result->_match)){
+            return ENOMEM;
+        }
+    } else if(mode & REAL){
+        if(!cursor){
+            result->_real = NEW(double, 1);
+            if(result->_real == NULL) return ENOMEM;
+            result->_real[cursor] = strtod(result->_match, &endptr);
+        } else {
+            result->_real = realloc(result->_real, sizeof(double) * (cursor + 1));
+            if(result->_real == NULL) ENOMEM;
+            result->_real[cursor] = strtod(result->_match, &endptr);
+        }
+
+        if((errno == ERANGE && (result->_real[cursor] == HUGE_VAL || result->_real[cursor] == -HUGE_VAL))
+           || (errno != 0 && result->_real[cursor] == 0)
+           || (endptr == result->_match)){
+            return ENOMEM;
+        }
+    } else if(mode & STRING){
+        if(!cursor){
+            result->_string = NEW(char *, 1);
+            if(result->_string == NULL) return ENOMEM;
+
+            result->_string[cursor] = extend(strlen(result->_match), result->_match);
+            if(result->_string[cursor] == NULL) return ENOMEM;
+
+            *maxSize = strlen(result->_match);
+        } else {
+            result->_string = realloc(result->_string, sizeof(char *) * (cursor + 1));
+            if(result->_string == NULL) return ENOMEM;
+
+            if(strlen(result->_match) > *maxSize){
+                *maxSize = strlen(result->_match);
+                for(i = 0; i < cursor - 1; i++){
+                    result->_string[i] = extend(*maxSize + 1, result->_string[i]);
+                    if(result->_string[i] == NULL) return ENOMEM;
+                }
+            }
+
+            result->_string[cursor] = extend(*maxSize, result->_match);
+            if(result->_string[cursor] == NULL) return ENOMEM;
+        }
+    }
+
+    return 0;
+}
+
 int readJson(long sizeLine, FILE *fcollection, const char *search, int mode, Result *result)
 {
     int r;
@@ -322,7 +355,6 @@ int readJson(long sizeLine, FILE *fcollection, const char *search, int mode, Res
     int currentMaxSizeMatches;
     int length;
     char *json_string = NULL;
-    char *endptr = NULL;
     char *temporaire = NULL;
     jsmn_parser parser;
     jsmntok_t tokens[100]; // by default, 100 JSON tokens
@@ -334,123 +366,65 @@ int readJson(long sizeLine, FILE *fcollection, const char *search, int mode, Res
         r = jsmn_parse(&parser, json_string, strlen(json_string), tokens, sizeof(tokens) / sizeof(tokens[0]));
         if(r < 0){
             printf("Failed to parse JSON: %d\n", r);
-            return strfree(-1, 1, &json_string);
+            return strfree(ENOMEM, 1, &json_string);
         }
 
         if(r < 1 || tokens[0].type != JSMN_OBJECT){
             printf("Object expected\n");
-            return strfree(-1, 1, &json_string);
+            return strfree(ENOMEM, 1, &json_string);
         }
 
         for(i = 0; i < r; i++){
             if(!jsoneq(json_string, &tokens[i], search)){
                 if(temporaire != NULL) free(temporaire);
                 temporaire = extend(strlen(json_string) - 1, json_string);
-                if(temporaire == NULL) return strfree(-1, 1, &json_string);
+                if(temporaire == NULL) return strfree(ENOMEM, 1, &json_string);
 
                 length = strlen(temporaire);
                 if(!cursor){
                     result->_matches = NEW(char *, 1);
-                    if(result->_matches == NULL) return strfree(-1, 1, &json_string);
+                    if(result->_matches == NULL) return strfree(ENOMEM, 2, &json_string, &temporaire);
 
                     result->_matches[cursor] = extend(length, temporaire);
-                    if(result->_matches[cursor] == NULL) return strfree(-1, 1, &json_string);
+                    if(result->_matches[cursor] == NULL) return strfree(ENOMEM, 2, &json_string, &temporaire);
 
                     currentMaxSizeMatches = length;
                 } else {
                     result->_matches = realloc(result->_matches, sizeof(char *) * (cursor + 1));
-                    if(result->_matches == NULL) return strfree(-1, 1, &json_string);
+                    if(result->_matches == NULL) return strfree(ENOMEM, 2, &json_string, &temporaire);
 
                     if(length > currentMaxSizeMatches){
                         currentMaxSizeMatches = length;
                         for(j = 0; j < cursor - 1; j++){
                             result->_matches[j] = extend(currentMaxSizeMatches, result->_matches[j]);
-                            if(result->_matches[j] == NULL) return strfree(-1, 1, &json_string);
+                            if(result->_matches[j] == NULL) return strfree(ENOMEM, 2, &json_string, &temporaire);
                         }
                     }
 
                     result->_matches[cursor] = extend(currentMaxSizeMatches, temporaire);
-                    if(result->_matches[cursor] == NULL) return strfree(-1, 1, &json_string);
+                    if(result->_matches[cursor] == NULL) return strfree(ENOMEM, 2, &json_string, &temporaire);
                 }
 
                 if(result->_match != NULL) free(result->_match);
                 result->_match = NEW(char *, tokens[i + 1].end - tokens[i + 1].start);
-                if(result->_match == NULL) return strfree(-1, 1, &json_string);
+                if(result->_match == NULL) return strfree(ENOMEM, 2, &json_string, &temporaire);
                 sprintf(result->_match, "%.*s", tokens[i + 1].end - tokens[i + 1].start, json_string + tokens[i + 1].start);
 
-                if(mode & INTEGER){
-                    if(!cursor){
-                        result->_integer = NEW(long, 1);
-                        if(result->_integer == NULL) return strfree(-1, 1, &json_string);
-                        result->_integer[cursor] = strtol(result->_match, &endptr, 10);
-                    } else {
-                        result->_integer = realloc(result->_integer, sizeof(long) * (cursor + 1));
-                        if(result->_integer == NULL) return strfree(-1, 1, &json_string);
-                        result->_integer[cursor] = strtol(result->_match, &endptr, 10);
-                    }
-
-                    if((errno == ERANGE && (result->_integer[cursor] == LONG_MAX || result->_integer[cursor] == LONG_MIN))
-                       || (errno != 0 && result->_integer[cursor] == 0)
-                       || (endptr == result->_match)){
-                        return strfree(-1, 1, &json_string);
-                    }
-                } else if(mode & REAL){
-                    if(!cursor){
-                        result->_real = NEW(double, 1);
-                        if(result->_real == NULL) return strfree(-1, 1, &json_string);
-                        result->_real[cursor] = strtod(result->_match, &endptr);
-                    } else {
-                        result->_real = realloc(result->_real, sizeof(double) * (cursor + 1));
-                        if(result->_real == NULL) return strfree(-1, 1, &json_string);
-                        result->_real[cursor] = strtod(result->_match, &endptr);
-                    }
-
-                    if((errno == ERANGE && (result->_real[cursor] == HUGE_VAL || result->_real[cursor] == -HUGE_VAL))
-                       || (errno != 0 && result->_real[cursor] == 0)
-                       || (endptr == result->_match)){
-                        return strfree(-1, 1, &json_string);
-                    }
-                } else if(mode & STRING){
-                    if(!cursor){
-                        result->_string = NEW(char *, 1);
-                        if(result->_string == NULL) return strfree(-1, 1, &json_string);
-
-                        // result->_string[cursor] = extend(strlen(result->_match) - 1, result->_match);
-                        result->_string[cursor] = extend(strlen(result->_match), result->_match);
-                        if(result->_string[cursor] == NULL) return strfree(-1, 1, &json_string);
-
-                        currentMaxSize = strlen(result->_match);
-                    } else {
-                        result->_string = realloc(result->_string, sizeof(char *) * (cursor + 1));
-                        if(result->_string == NULL) return strfree(-1, 1, &json_string);
-
-                        if(strlen(result->_match) > currentMaxSize){
-                            currentMaxSize = strlen(result->_match);
-                            for(j = 0; j < cursor - 1; j++){
-                                result->_string[j] = extend(currentMaxSize + 1, result->_string[j]);
-                                if(result->_string[j] == NULL) return strfree(-1, 1, &json_string);
-                            }
-                        }
-
-                        result->_string[cursor] = extend(currentMaxSize, result->_match);
-                        if(result->_string[cursor] == NULL) return strfree(-1, 1, &json_string);
-                    }
-                }
+                jsonType(result, mode, cursor, &currentMaxSize);
 
                 cursor++;
                 break;
             }
         }
 
-        if(temporaire != NULL) free(temporaire);
-        if(json_string != NULL) free(json_string);
+        strfree(0, 2, &json_string, &temporaire);
 
         json_string = NEW(char *, sizeLine);
-        if(json_string == NULL) return -1;
+        if(json_string == NULL) return EINTR;
     }
 
     result->_size = cursor;
-    return strfree(1, 1, &json_string);
+    return strfree(0, 1, &json_string);
 }
 
 int writeJson(char **json_string, const char *criteria, const char *value, int type, int cursor, int size)
@@ -549,9 +523,9 @@ int createCopy(Settings *settings, const char *originalPath, const char *copyPat
     if(fcollection != NULL){
         fcopy = fopen(copyPath, "w");
         if(fcopy != NULL){
-            content = NEW(char *, settings->sizeLine);
+            content = NEW(char *, 6632);
             if(content == NULL) return strfree(ENOMEM, 2, &originalPath, &copyPath);
-            while(fgets(content, settings->sizeLine, fcollection) != NULL){
+            while(fgets(content, 6632, fcollection) != NULL){
                 temporaire = extend(strlen(content) - 1, content);
                 if(temporaire == NULL) return strfree(ENOMEM, 2, &originalPath, &copyPath);
 
@@ -572,7 +546,7 @@ int createCopy(Settings *settings, const char *originalPath, const char *copyPat
                 fprintf(fcopy, "%s\n", temporaire);
 
                 strfree(0, 2, &content, &temporaire);
-                content = NEW(char *, settings->sizeLine);
+                content = NEW(char *, 6632);
                 if(content == NULL) return strfree(ENOMEM, 2, &originalPath, &copyPath);
             }
 

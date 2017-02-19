@@ -35,13 +35,10 @@ typedef struct {
     char passdbHash[41];
     int permission;
     int root;
-    long sizeLine;
 } Settings;
 
 typedef struct {
     int size;
-    /* int length;
-    char **elements; */
     char key[50][64];
     char value[50][64];
     int type[50];
@@ -218,9 +215,46 @@ int beesy_drop_collection(Settings *, const char *);
 */
 int beesy_drop_database(Settings *, const char *, const char *);
 
+/*
+** Description: check to see if an identical key hasn't already been added to the stack
+**
+** Syntax: beesy_integrity(struct, strA)
+** <struct> stack
+** <strA> key to insert
+*/
 int beesy_integrity(Stack *, const char *);
+
+/*
+** Description: add a key and its value in the stack
+**
+** Syntax : beesy_push(structA, structB, strA, strB, intA)
+** <structA> configuration options
+** <structB> stack
+** <strA> key to insert
+** <strB> value to insert
+** <intA> type of key
+*/
 int beesy_push(Settings *, Stack *, const char *, const char *, int);
+
+/*
+** Description: transfer a stack to a collection
+**
+** Syntax : beesy_pull(structA, structB, strA)
+** <structA> configuration options
+** <structB> stack
+** <strA> name of the collection
+*/
 int beesy_pull(Settings *, Stack *, const char *);
+
+/*
+** Description: add document
+**
+** Syntax : beesy_insert_document(structA, structB, strA, intA)
+** <structA> configuration options
+** <structB> stack
+** <strA> name of the collection
+** <intA> mode
+*/
 int beesy_insert_document(Settings *, Stack *, const char *, int);
 
 #endif // CONTROL_H_INCLUDED

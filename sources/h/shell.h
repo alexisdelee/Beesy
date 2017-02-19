@@ -53,6 +53,9 @@ int beesy_detect(Settings *, Terminal *, Stack *, char (*)[2][300]);
 */
 int beesy_analyze_argv(Terminal *, int);
 
+/*
+** Description: execute the insert function
+*/
 int beesy_run_insert(Settings *, Terminal *, Stack *);
 
 /*
@@ -69,6 +72,13 @@ int beesy_analyze_symbol(int, const char *);
 */
 int beesy_run_search_options(int, Settings *, const char *, int, const char *, void *, Request *);
 
+/*
+** Description: analyze the symbol according to the type
+**
+** Syntax: beesy_analyze_type(strA, strB)
+** <strA> type
+** <strB> symbol
+*/
 int beesy_analyze_type(const char *, const char *);
 
 /*
@@ -94,6 +104,12 @@ void beesy_run_exit(Settings *);
 */
 int beesy_security_mode(Settings *);
 
+/*
+** Description: empty the stack
+**
+** Syntax: popStack(struct)
+** <struct> stack
+*/
 void popStack(Stack *);
 
 /*

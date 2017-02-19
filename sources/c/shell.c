@@ -46,9 +46,9 @@ int beesy_argv(char *command, Terminal *terminal)
 
     if(str(&cpCommand, command)) return ENOMEM;
 
-    _command = strtrim(cpCommand);
+    _command = strtrim(cpCommand); // remove unwanted spaces at the beginning and end of the string
 
-    status = strsplit(_command, " ", &terminal->argc, &terminal->argv);
+    status = strsplit(_command, " ", &terminal->argc, &terminal->argv); // move each parameter in a table
     if(status)
         return strfree(status, 2, &cpCommand, &_command);
 
@@ -62,10 +62,10 @@ int beesy_detect(Settings *settings, Terminal *terminal, Stack *stack, char (*co
 
     for( ; cursor < 11; cursor++){
         if(!strcmp("help", terminal->argv[0])){
-            printf("%s %s\n", commands[cursor][0], commands[cursor][1]);
+            printf("%s %s\n", commands[cursor][0], commands[cursor][1]); // if we ask for help, we only show...
             helped = 1;
         } else if(!strcmp(commands[cursor][0], terminal->argv[0])){
-            return beesy_run(settings, terminal, stack, cursor);
+            return beesy_run(settings, terminal, stack, cursor); // ...otherwise we send the rest to another function
         }
     }
 
@@ -82,7 +82,7 @@ int beesy_analyze_argv(Terminal *terminal, int param)
     if(terminal->argc > param) return E2BIG;
 
     for(index = 1; index < param; index++){
-        status = check(64, 1, &terminal->argv[index]);
+        status = check(64, 1, &terminal->argv[index]); // maximum of 65 characters
         if(status)
             return status;
     }
@@ -101,11 +101,11 @@ int beesy_run_insert(Settings *settings, Terminal *terminal, Stack *stack)
         if(status)
             return status;
 
-        mode = beesy_analyze_type(terminal->argv[2], "=");
+        mode = beesy_analyze_type(terminal->argv[2], "="); // equality is the only symbol in common with all types (integer, real, string)
         if(!mode)
             return EINVAL;
 
-        status = beesy_push(settings, stack, terminal->argv[3], terminal->argv[4], mode);
+        status = beesy_push(settings, stack, terminal->argv[3], terminal->argv[4], mode); // it's added to the stack
         if(status)
             return status;
     } else if(!strcmp("--pull", terminal->argv[1])
@@ -118,12 +118,12 @@ int beesy_run_insert(Settings *settings, Terminal *terminal, Stack *stack)
         if(status)
             return status;
 
-        popStack(stack);
+        popStack(stack); // think of emptying the stack after the "pull"
     } else {
         return EINVAL;
     }
 
-    status = beesy_security_mode(settings);
+    status = beesy_security_mode(settings); // commit if "security" mode is enabled in the configuration file
     if(status)
         return status;
 
@@ -199,7 +199,7 @@ int sortOption(Terminal *terminal)
         if(!status){
             if(!strcmp("--qsort", terminal->argv[6])
                || !strcmp("-qs", terminal->argv[6])){
-                return SORT;
+                return SORT; // addition of the "sort" flag
             }
         }
     }
@@ -344,7 +344,7 @@ void popStack(Stack *stack)
     int index;
 
     for(index = 0; index < stack->size; index++){
-        memset(stack->key[index], 0, sizeof(stack->key[index])); // copy the character '\0'
+        memset(stack->key[index], 0, sizeof(stack->key[index])); // copy the character '\0' sizeof(stack->key[i]) times
         memset(stack->value[index], 0, sizeof(stack->value[index]));
     }
 
@@ -366,7 +366,7 @@ int beesy_run(Settings *settings, Terminal *terminal, Stack *stack, int id)
                 return status;
 
             printf("connect to the database \"%s\"...\n", terminal->argv[1]);
-            sprintf(terminal->header, "%s", terminal->argv[1]);
+            sprintf(terminal->header, "%s", terminal->argv[1]); // modify the header with the name of the database
 
             break;
         case 2:
@@ -408,7 +408,7 @@ int beesy_run(Settings *settings, Terminal *terminal, Stack *stack, int id)
             popStack(stack); // empty the stack
 
             printf("disconnect to the current database...\n");
-            str(&terminal->header, "");
+            str(&terminal->header, ""); // empty the header
 
             break;
         case 6:
